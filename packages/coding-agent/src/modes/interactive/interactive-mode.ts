@@ -4758,7 +4758,7 @@ export class InteractiveMode {
 				case "worker_start":
 					progress.setExecutorRunning(evt.model);
 					break;
-				case "worker_output":
+				case "worker_done":
 					progress.updateExecutorOutput(evt.output.substring(0, 200));
 					break;
 				case "complete":
