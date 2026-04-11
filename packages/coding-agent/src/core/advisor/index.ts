@@ -1,18 +1,16 @@
-/**
- * Advisor System - Model routing, sub-agent spawning, and worktree management
- */
-
 export {
-	AdvisorAgent,
+	type AdvisorEvent,
+	AdvisorOrchestrator,
 	type AdvisorResult,
 	createAdvisorSystem,
 	ModelRouter,
+	type ProgressCallback,
 	type RoutingConfig,
 	type SubAgentResult,
 	SubAgentSpawner,
 	type SubAgentTask,
+	TaskClassifier,
 	type TaskConfig,
 	type TaskRouting,
 	WorkTree,
-	type WorkTreeResult,
 } from "./advisor-agent.js";

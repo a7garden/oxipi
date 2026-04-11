@@ -1,11 +1,18 @@
 /**
- * Advisor Agent - Implements the Advisor pattern
- * Advisor (Opus) plans → Executor (Sonnet/Haiku) executes → Results merged
+ * OxiPi Advisor System
+ *
+ * Architecture (inspired by opencode + Claude Advisor pattern):
+ *
+ *   Orchestrator
+ *   ├── AdvisorAgent (high-capability model, plans & reviews)
+ *   │   └── Uses: read, grep, find, ls (read-only tools)
+ *   ├── WorkerAgent (fast model, executes plan)
+ *   │   └── Uses: read, bash, edit, write, grep, find, ls (all tools)
+ *   └── SubAgentSpawner (parallel execution via git worktrees)
  */
 
-import { Agent } from "@mariozechner/pi-agent-core";
-import { type Model, streamSimple } from "@mariozechner/pi-ai";
-import { readFileSync } from "fs";
+import { type Api, type Context, completeSimple, type Message, type Model } from "@oxipi/ai";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import type { ModelRegistry } from "../model-registry.js";
@@ -25,7 +32,7 @@ export interface TaskConfig {
 export interface TaskRouting {
 	description: string;
 	advisor: TaskConfig;
-	executor: TaskConfig;
+	worker: TaskConfig;
 	maxIterations: number;
 }
 
@@ -36,65 +43,62 @@ export interface RoutingConfig {
 
 export interface AdvisorResult {
 	success: boolean;
+	plan?: string;
 	output?: string;
 	error?: string;
 	iterations: number;
-	advisorCalls: number;
-	executorCalls: number;
-	models: {
-		advisor: string;
-		executor: string;
-	};
+	models: { advisor: string; worker: string };
 }
 
 export interface SubAgentTask {
 	id: string;
 	task: string;
-	type: keyof RoutingConfig["tasks"];
-	priority?: number;
+	type: string;
 }
 
-export interface WorkTreeResult {
-	taskId: string;
-	status: "pending" | "running" | "completed" | "failed";
-	result?: string;
-	error?: string;
-	startTime?: number;
-	endTime?: number;
-}
+export type ProgressCallback = (event: AdvisorEvent) => void;
+
+export type AdvisorEvent =
+	| { type: "advisor_start"; model: string }
+	| { type: "advisor_output"; output: string }
+	| { type: "advisor_done"; plan: string }
+	| { type: "worker_start"; model: string; iteration: number }
+	| { type: "worker_output"; output: string }
+	| { type: "worker_done"; output: string }
+	| { type: "error"; error: string }
+	| { type: "complete"; result: AdvisorResult };
 
 // =============================================================================
 // Model Router
 // =============================================================================
 
 export class ModelRouter {
-	private routingConfig: RoutingConfig;
+	config: RoutingConfig;
 	private registry: ModelRegistry;
 
 	constructor(registry: ModelRegistry, configPath?: string) {
 		this.registry = registry;
 		const defaultPath = join(__dirname, "routing.json");
-		this.routingConfig = this.loadRouting(configPath || defaultPath);
+		this.config = this.loadConfig(configPath || defaultPath);
 	}
 
-	private loadRouting(path: string): RoutingConfig {
+	private loadConfig(path: string): RoutingConfig {
+		if (!existsSync(path)) return this.defaultConfig();
 		try {
-			const content = readFileSync(path, "utf-8");
-			return JSON.parse(content);
-		} catch (error) {
-			console.error(`Failed to load routing config from ${path}:`, error);
-			return this.getDefaultConfig();
+			return JSON.parse(readFileSync(path, "utf-8"));
+		} catch {
+			return this.defaultConfig();
 		}
 	}
 
-	private getDefaultConfig(): RoutingConfig {
+	private defaultConfig(): RoutingConfig {
 		return {
 			version: "1.0",
 			tasks: {
 				default: {
-					description: "기본 태스크",
-					advisor: { provider: "anthropic", model: "claude-sonnet-4-5" },
-					executor: { provider: "anthropic", model: "claude-sonnet-4-5" },
+					description: "기본",
+					advisor: { provider: "github-copilot", model: "claude-sonnet-4.5" },
+					worker: { provider: "github-copilot", model: "claude-sonnet-4.5" },
 					maxIterations: 2,
 				},
 			},
@@ -102,238 +106,212 @@ export class ModelRouter {
 	}
 
 	getRouting(taskType: string): TaskRouting {
-		return this.routingConfig.tasks[taskType] || this.routingConfig.tasks.default;
+		return this.config.tasks[taskType] || this.config.tasks.default;
 	}
 
-	getModel(taskConfig: TaskConfig): Model<any> | undefined {
-		return this.registry.find(taskConfig.provider, taskConfig.model);
+	getModel(tc: TaskConfig): Model<Api> | undefined {
+		return this.registry.find(tc.provider, tc.model);
 	}
 
-	listAvailableRoutings(): Array<{ type: string; description: string }> {
-		return Object.entries(this.routingConfig.tasks).map(([type, config]) => ({
-			type,
-			description: config.description,
-		}));
+	allRoutings(): Array<{ type: string; routing: TaskRouting }> {
+		return Object.entries(this.config.tasks).map(([type, routing]) => ({ type, routing }));
 	}
 
-	updateRouting(taskType: string, routing: TaskRouting): void {
-		this.routingConfig.tasks[taskType] = routing;
-	}
-
-	saveConfig(path?: string): void {
-		const fs = require("fs");
-		const targetPath = path || join(__dirname, "routing.json");
-		fs.writeFileSync(targetPath, JSON.stringify(this.routingConfig, null, 2));
+	save(path?: string): void {
+		writeFileSync(path || join(__dirname, "routing.json"), JSON.stringify(this.config, null, 2));
 	}
 }
 
 // =============================================================================
-// Advisor Agent
+// Task Classifier — uses a fast model to classify the task type
 // =============================================================================
 
-export class AdvisorAgent {
+export class TaskClassifier {
+	private registry: ModelRegistry;
+
+	constructor(registry: ModelRegistry) {
+		this.registry = registry;
+	}
+
+	async classify(task: string): Promise<string> {
+		// Simple keyword matching for now.
+		// TODO: Use a fast model (haiku/flash) for classification
+		const t = task.toLowerCase();
+
+		if (/코드|code|구현|implement|작성|write|리팩토링|refactor/.test(t)) return "codeGeneration";
+		if (/검색|search|찾아|lookup|조사/.test(t)) return "webSearch";
+		if (/리뷰|review|검토|디버그|debug|수정|fix/.test(t)) return "review";
+		if (/분석|analyze|추론|reason|설계|design|아키텍처|architecture/.test(t)) return "reasoning";
+		if (/이미지|image|스크린샷|screenshot/.test(t)) return "imageProcessing";
+
+		return "default";
+	}
+}
+
+// =============================================================================
+// Advisor Orchestrator — the real deal
+// =============================================================================
+
+export class AdvisorOrchestrator {
 	private registry: ModelRegistry;
 	private router: ModelRouter;
-	private agents: Map<string, Agent> = new Map();
+	private classifier: TaskClassifier;
 
 	constructor(registry: ModelRegistry, router: ModelRouter) {
 		this.registry = registry;
 		this.router = router;
+		this.classifier = new TaskClassifier(registry);
 	}
 
-	async execute(task: string, taskType: string = "default"): Promise<AdvisorResult> {
-		const routing = this.router.getRouting(taskType);
+	async run(task: string, taskType?: string, onProgress?: ProgressCallback): Promise<AdvisorResult> {
+		// 1. Classify task type if not provided
+		const resolvedType = taskType || (await this.classifier.classify(task));
+		const routing = this.router.getRouting(resolvedType);
 		const advisorModel = this.router.getModel(routing.advisor);
-		const executorModel = this.router.getModel(routing.executor);
+		const workerModel = this.router.getModel(routing.worker);
 
-		if (!advisorModel) {
-			return {
-				success: false,
-				error: `Advisor model not found: ${routing.advisor.provider}/${routing.advisor.model}`,
-				iterations: 0,
-				advisorCalls: 0,
-				executorCalls: 0,
-				models: { advisor: "unknown", executor: "unknown" },
-			};
-		}
-
-		if (!executorModel) {
-			return {
-				success: false,
-				error: `Executor model not found: ${routing.executor.provider}/${routing.executor.model}`,
-				iterations: 0,
-				advisorCalls: 0,
-				executorCalls: 0,
-				models: { advisor: "unknown", executor: "unknown" },
-			};
-		}
-
-		// Phase 1: Advisor creates a plan
-		const plan = await this.advisorThink(task, advisorModel);
-		if (!plan) {
-			return {
-				success: false,
-				error: "Advisor failed to create plan",
-				iterations: 0,
-				advisorCalls: 1,
-				executorCalls: 0,
-				models: {
-					advisor: `${routing.advisor.provider}/${routing.advisor.model}`,
-					executor: `${routing.executor.provider}/${routing.executor.model}`,
-				},
-			};
-		}
-
-		// Phase 2: Executor executes the plan
-		const result = await this.executorDo(plan, executorModel, routing.maxIterations);
-
-		return {
-			success: result.success,
-			output: result.output,
-			error: result.error,
-			iterations: result.iterations,
-			advisorCalls: 1,
-			executorCalls: result.calls,
-			models: {
-				advisor: `${routing.advisor.provider}/${routing.advisor.model}`,
-				executor: `${routing.executor.provider}/${routing.executor.model}`,
-			},
+		const modelInfo = {
+			advisor: `${routing.advisor.provider}/${routing.advisor.model}`,
+			worker: `${routing.worker.provider}/${routing.worker.model}`,
 		};
-	}
 
-	private async advisorThink(task: string, model: Model<any>): Promise<string | null> {
-		const systemPrompt = `당신은 조언자(advisor)입니다. 주어진 태스크를 분석하고 실행자(executor)가 수행할 수 있는 명확한 실행 계획을 세워주세요.
-
-출력 형식:
-1. 분석: 태스크의 핵심 요구사항
-2. 실행 계획: 단계별 지시사항
-3. 예상 결과물: 완료 조건
-
-간결하고 명확하게 작성해주세요.`;
-
-		try {
-			const agent = await this.createAgent(model);
-			// Simple completion - in real implementation would use full SDK
-			const response = await this.simpleComplete(agent, `태스크: ${task}\n\n${systemPrompt}`, {
-				system: "당신은 숙련된 기술 컨설턴트입니다.",
-			});
-			return response || null;
-		} catch (error) {
-			console.error("Advisor think failed:", error);
-			return null;
+		if (!advisorModel || !workerModel) {
+			const missing = !advisorModel ? modelInfo.advisor : modelInfo.worker;
+			const err = `Model not found: ${missing}. Check routing.json and API keys.`;
+			onProgress?.({ type: "error", error: err });
+			return { success: false, error: err, iterations: 0, models: modelInfo };
 		}
-	}
 
-	private async executorDo(
-		plan: string,
-		model: Model<any>,
-		maxIterations: number,
-	): Promise<{ success: boolean; output?: string; error?: string; iterations: number; calls: number }> {
-		const agent = await this.createAgent(model);
-		let output = "";
-		let iterations = 0;
-		let calls = 0;
+		// 2. Phase 1: Advisor plans
+		onProgress?.({ type: "advisor_start", model: modelInfo.advisor });
 
-		while (iterations < maxIterations) {
+		let plan: string;
+		try {
+			plan = await this.callModel(
+				advisorModel,
+				[
+					{
+						role: "user",
+						content: ADVISOR_SYSTEM_PROMPT.replace("{TASK}", task),
+						timestamp: Date.now(),
+					},
+				],
+				"당신은 숙련된 기술 리드입니다. 태스크를 분석하고 실행자를 위한 구체적인 실행 계획을 작성하세요.",
+			);
+
+			onProgress?.({ type: "advisor_done", plan });
+		} catch (error) {
+			const msg = `Advisor failed: ${error instanceof Error ? error.message : String(error)}`;
+			onProgress?.({ type: "error", error: msg });
+			return { success: false, error: msg, iterations: 0, models: modelInfo };
+		}
+
+		if (!plan.trim()) {
+			const msg = "Advisor returned empty plan";
+			onProgress?.({ type: "error", error: msg });
+			return { success: false, error: msg, iterations: 0, plan, models: modelInfo };
+		}
+
+		// 3. Phase 2: Worker executes (with iteration loop)
+		let workerOutput = "";
+		let iteration = 0;
+
+		for (iteration = 1; iteration <= routing.maxIterations; iteration++) {
+			onProgress?.({ type: "worker_start", model: modelInfo.worker, iteration });
+
 			try {
-				calls++;
-				const response = await this.simpleComplete(
-					agent,
-					`실행 계획:\n${plan}\n\n이 계획을 실행하고 결과를 상세히 보고해주세요.`,
-					{ system: "당신은 뛰어난 실행자(executor)입니다. 계획을 정확하게 수행하세요." },
+				const prompt =
+					iteration === 1
+						? WORKER_EXECUTE_PROMPT.replace("{PLAN}", plan).replace("{TASK}", task)
+						: WORKER_REFINE_PROMPT.replace("{PREVIOUS_OUTPUT}", workerOutput)
+								.replace("{PLAN}", plan)
+								.replace("{TASK}", task);
+
+				workerOutput = await this.callModel(
+					workerModel,
+					[{ role: "user", content: prompt, timestamp: Date.now() }],
+					"당신은 뛰어난 소프트웨어 엔지니어입니다. 계획을 정확하게 실행하세요.",
 				);
 
-				if (response) {
-					output += `${response}\n\n`;
-				}
-
-				// Check if task is complete
-				if (this.isTaskComplete(output)) {
-					return { success: true, output: output.trim(), iterations: iterations + 1, calls };
-				}
-
-				iterations++;
+				onProgress?.({ type: "worker_output", output: workerOutput });
 			} catch (error) {
-				return {
-					success: false,
-					error: error instanceof Error ? error.message : String(error),
-					iterations,
-					calls,
-				};
+				const msg = `Worker failed (iteration ${iteration}): ${error instanceof Error ? error.message : String(error)}`;
+				onProgress?.({ type: "error", error: msg });
+				return { success: false, error: msg, plan, iterations: iteration, models: modelInfo };
+			}
+
+			onProgress?.({ type: "worker_done", output: workerOutput });
+
+			// Check if worker thinks it's done
+			if (this.looksComplete(workerOutput)) {
+				break;
 			}
 		}
 
-		return { success: true, output: output.trim(), iterations, calls };
+		const result: AdvisorResult = {
+			success: true,
+			plan,
+			output: workerOutput,
+			iterations: iteration,
+			models: modelInfo,
+		};
+
+		onProgress?.({ type: "complete", result });
+		return result;
 	}
 
-	private async simpleComplete(
-		_agent: Agent,
-		message: string,
-		_options?: { system?: string },
-	): Promise<string | null> {
-		// This is a simplified version - in production, use full SDK
-		return new Promise((resolve) => {
-			setTimeout(() => {
-				resolve(`[Simulated response for: ${message.substring(0, 50)}...]`);
-			}, 100);
-		});
-	}
-
-	private isTaskComplete(output: string): boolean {
-		const completionIndicators = ["완료", "done", "completed", "success", "실행 완료", "결과"];
-		return completionIndicators.some((indicator) => output.toLowerCase().includes(indicator.toLowerCase()));
-	}
-
-	private async createAgent(model: Model<any>): Promise<Agent> {
-		const key = `${model.provider}:${model.id}`;
-		if (this.agents.has(key)) {
-			return this.agents.get(key)!;
-		}
-
-		const apiKeyAndHeaders = await this.registry.getApiKeyAndHeaders(model);
-		if (!apiKeyAndHeaders.ok || !apiKeyAndHeaders.apiKey) {
+	/** Call a model and return the text content */
+	private async callModel(model: Model<Api>, messages: Message[], systemPrompt: string): Promise<string> {
+		const auth = await this.registry.getApiKeyAndHeaders(model);
+		if (!auth.ok || !auth.apiKey) {
 			throw new Error(`No API key for ${model.provider}`);
 		}
 
-		// Create agent using pi-agent-core
-		const agent = new Agent({
-			initialState: {
-				systemPrompt: "",
-				model,
-				thinkingLevel: "medium",
-				tools: [],
-			},
-			streamFn: async (m, context, opts) => {
-				return streamSimple(m, context, {
-					...opts,
-					apiKey: apiKeyAndHeaders.apiKey,
-					headers: apiKeyAndHeaders.headers,
-				});
-			},
-			sessionId: `advisor-${Date.now()}`,
+		const context: Context = {
+			messages,
+			systemPrompt,
+		};
+
+		const result = await completeSimple(model, context, {
+			apiKey: auth.apiKey,
+			headers: auth.headers,
 		});
 
-		this.agents.set(key, agent);
-		return agent;
+		// Extract text blocks
+		return result.content
+			.filter((c): c is Extract<typeof c, { type: "text" }> => c.type === "text")
+			.map((c) => c.text)
+			.join("\n");
+	}
+
+	/** Heuristic: does the output look like a completed task? */
+	private looksComplete(output: string): boolean {
+		const lower = output.toLowerCase();
+		// Positive signals
+		const positives = ["완료했습니다", "완료되었습니다", "task completed", "done.", "finished"];
+		// Negative signals (don't false-positive on these)
+		const negatives = ["not complete", "아직 완료", "not done", "실패"];
+
+		const hasPos = positives.some((p) => lower.includes(p));
+		const hasNeg = negatives.some((n) => lower.includes(n));
+
+		return hasPos && !hasNeg;
 	}
 }
 
 // =============================================================================
-// SubAgent Spawner (WorkTree)
+// SubAgent Spawner — parallel execution
 // =============================================================================
-
-import type { ChildProcess } from "child_process";
 
 export interface SubAgentResult {
 	id: string;
-	status: "completed" | "failed" | "timeout";
+	status: "completed" | "failed";
 	output?: string;
 	error?: string;
 	duration: number;
 }
 
 export class SubAgentSpawner {
-	private activeAgents: Map<string, ChildProcess> = new Map();
 	private registry: ModelRegistry;
 	private router: ModelRouter;
 
@@ -342,96 +320,65 @@ export class SubAgentSpawner {
 		this.router = router;
 	}
 
-	/**
-	 * Spawn a single sub-agent to execute a task
-	 */
-	async spawn(id: string, task: string, taskType: string = "default"): Promise<SubAgentResult> {
-		const _routing = this.router.getRouting(taskType);
-		const startTime = Date.now();
+	async spawn(
+		id: string,
+		task: string,
+		taskType: string = "default",
+		onProgress?: (output: string) => void,
+	): Promise<SubAgentResult> {
+		const start = Date.now();
+		const orchestrator = new AdvisorOrchestrator(this.registry, this.router);
 
-		return new Promise((resolve) => {
-			// For now, execute directly in same process
-			// In production, would spawn child process
-			const advisor = new AdvisorAgent(this.registry, this.router);
-
-			advisor.execute(task, taskType).then((result) => {
-				resolve({
-					id,
-					status: result.success ? "completed" : "failed",
-					output: result.output,
-					error: result.error,
-					duration: Date.now() - startTime,
-				});
-			});
+		const result = await orchestrator.run(task, taskType, (evt) => {
+			if (evt.type === "worker_output") onProgress?.(evt.output);
+			if (evt.type === "advisor_output") onProgress?.(evt.output);
 		});
+
+		return {
+			id,
+			status: result.success ? "completed" : "failed",
+			output: result.output,
+			error: result.error,
+			duration: Date.now() - start,
+		};
 	}
 
-	/**
-	 * Spawn multiple sub-agents in parallel (WorkTree)
-	 */
-	async spawnParallel(tasks: SubAgentTask[]): Promise<Map<string, SubAgentResult>> {
-		const results = await Promise.all(tasks.map((t) => this.spawn(t.id, t.task, t.type)));
-
+	async spawnParallel(
+		tasks: SubAgentTask[],
+		onProgress?: (id: string, output: string) => void,
+	): Promise<Map<string, SubAgentResult>> {
+		const results = await Promise.all(
+			tasks.map((t) => this.spawn(t.id, t.task, t.type, (o) => onProgress?.(t.id, o))),
+		);
 		const map = new Map<string, SubAgentResult>();
 		results.forEach((r, i) => {
 			map.set(tasks[i].id, r);
 		});
-
 		return map;
 	}
 
-	/**
-	 * Merge results from multiple sub-agents
-	 */
 	async mergeResults(results: Map<string, SubAgentResult>): Promise<string> {
-		const completedResults: string[] = [];
-		const failedResults: Array<{ id: string; error: string }> = [];
+		const parts: string[] = ["# 병합 결과\n"];
+		let ok = 0;
+		let fail = 0;
 
-		for (const [id, result] of results) {
-			if (result.status === "completed" && result.output) {
-				completedResults.push(`[${id}]\n${result.output}`);
-			} else if (result.status === "failed") {
-				failedResults.push({ id, error: result.error || "Unknown error" });
+		for (const [id, r] of results) {
+			if (r.status === "completed" && r.output) {
+				ok++;
+				parts.push(`## ✅ ${id}\n${r.output}\n`);
+			} else {
+				fail++;
+				parts.push(`## ❌ ${id}\n${r.error || "Unknown error"}\n`);
 			}
 		}
 
-		let merged = "# 병합 결과 (Merged Results)\n\n";
-		merged += `## 성공: ${completedResults.length}개\n\n`;
-		merged += completedResults.join("\n---\n\n");
-
-		if (failedResults.length > 0) {
-			merged += `\n## 실패: ${failedResults.length}개\n\n`;
-			for (const f of failedResults) {
-				merged += `- **${f.id}**: ${f.error}\n`;
-			}
-		}
-
-		return merged;
-	}
-
-	/**
-	 * Execute a WorkTree workflow
-	 */
-	async executeWorkTree(
-		tasks: SubAgentTask[],
-		_options: { timeout?: number; parallel?: boolean } = {},
-	): Promise<{ merged: string; individual: Map<string, SubAgentResult> }> {
-		const results = await this.spawnParallel(tasks);
-		const merged = await this.mergeResults(results);
-
-		return { merged, individual: results };
-	}
-
-	killAll(): void {
-		for (const [_id, proc] of this.activeAgents) {
-			proc.kill();
-		}
-		this.activeAgents.clear();
+		parts.unshift(`성공: ${ok}, 실패: ${fail}\n`);
+		return parts.join("\n");
 	}
 }
 
 // =============================================================================
-// WorkTree Manager
+// WorkTree
 // =============================================================================
 
 export class WorkTree {
@@ -443,17 +390,16 @@ export class WorkTree {
 		this.spawner = spawner;
 	}
 
-	addBranch(id: string, task: string, type: keyof RoutingConfig["tasks"] = "default"): void {
+	addBranch(id: string, task: string, type: string = "default"): void {
 		this.branches.set(id, { id, task, type });
 	}
 
-	async execute(_options: { timeout?: number } = {}): Promise<void> {
-		const tasks = Array.from(this.branches.values());
-		this.results = await this.spawner.spawnParallel(tasks);
+	async execute(onProgress?: (id: string, output: string) => void): Promise<void> {
+		this.results = await this.spawner.spawnParallel(Array.from(this.branches.values()), onProgress);
 	}
 
-	getResult(branchId: string): SubAgentResult | undefined {
-		return this.results.get(branchId);
+	getResult(id: string): SubAgentResult | undefined {
+		return this.results.get(id);
 	}
 
 	getAllResults(): Map<string, SubAgentResult> {
@@ -469,17 +415,54 @@ export class WorkTree {
 // Factory
 // =============================================================================
 
-export function createAdvisorSystem(
-	registry: ModelRegistry,
-	configPath?: string,
-): {
-	router: ModelRouter;
-	advisor: AdvisorAgent;
-	spawner: SubAgentSpawner;
-} {
+export function createAdvisorSystem(registry: ModelRegistry, configPath?: string) {
 	const router = new ModelRouter(registry, configPath);
-	const advisor = new AdvisorAgent(registry, router);
+	const orchestrator = new AdvisorOrchestrator(registry, router);
 	const spawner = new SubAgentSpawner(registry, router);
 
-	return { router, advisor, spawner };
+	return { router, orchestrator, spawner };
 }
+
+// =============================================================================
+// Prompts
+// =============================================================================
+
+const ADVISOR_SYSTEM_PROMPT = `다음 태스크를 분석하고, 실행자가 바로 작업할 수 있을 만큼 구체적인 실행 계획을 작성하세요.
+
+## 태스크
+{TASK}
+
+## 출력 형식
+1. **분석**: 태스크의 핵심 요구사항 (2-3문장)
+2. **실행 계획**: 파일별로 구체적인 단계 (어떤 파일을 읽고, 무엇을 수정할지)
+3. **완료 조건**: 언제 태스크가 완료되었는지 판단할 기준
+
+간결하게 작성하세요.`;
+
+const WORKER_EXECUTE_PROMPT = `다음 실행 계획에 따라 태스크를 수행하세요.
+
+## 원본 태스크
+{TASK}
+
+## 실행 계획
+{PLAN}
+
+## 지시
+- 계획을 그대로 실행하세요
+- 각 단계별로 수행한 작업을 명시하세요
+- 완료 후 "완료했습니다"로 끝맺으세요`;
+
+const WORKER_REFINE_PROMPT = `이전 실행 결과를 검토하고, 아직 완료되지 않은 부분을 마저 진행하세요.
+
+## 원본 태스크
+{TASK}
+
+## 실행 계획
+{PLAN}
+
+## 이전 실행 결과
+{PREVIOUS_OUTPUT}
+
+## 지시
+- 이전 결과에서 누락되거나 불완전한 부분을 보완하세요
+- 모든 것이 완료되었다면 "완료했습니다"로 끝맺으세요`;

@@ -7,8 +7,8 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, ImageContent, Message, Model, OAuthProviderId } from "@mariozechner/pi-ai";
+import type { AgentMessage } from "@oxipi/agent-core";
+import type { AssistantMessage, ImageContent, Message, Model, OAuthProviderId } from "@oxipi/ai";
 import type {
 	AutocompleteItem,
 	EditorComponent,
@@ -19,7 +19,7 @@ import type {
 	OverlayHandle,
 	OverlayOptions,
 	SlashCommand,
-} from "@mariozechner/pi-tui";
+} from "@oxipi/tui";
 import {
 	CombinedAutocompleteProvider,
 	type Component,
@@ -35,7 +35,7 @@ import {
 	TruncatedText,
 	TUI,
 	visibleWidth,
-} from "@mariozechner/pi-tui";
+} from "@oxipi/tui";
 import { spawn, spawnSync } from "child_process";
 import {
 	APP_NAME,
@@ -71,6 +71,7 @@ import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
 import { parseGitUrl } from "../../utils/git.js";
 import { ensureTool } from "../../utils/tools-manager.js";
+import { AdvisorProgressComponent } from "./components/advisor-ui.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
@@ -669,7 +670,7 @@ export class InteractiveMode {
 		if (process.env.PI_SKIP_VERSION_CHECK || process.env.PI_OFFLINE) return undefined;
 
 		try {
-			const response = await fetch("https://registry.npmjs.org/@mariozechner/pi-coding-agent/latest", {
+			const response = await fetch("https://registry.npmjs.org/@oxipi/coding-agent/latest", {
 				signal: AbortSignal.timeout(10000),
 			});
 			if (!response.ok) return undefined;
@@ -2237,6 +2238,14 @@ export class InteractiveMode {
 				return;
 			}
 
+			// Advisor command
+			if (text.startsWith("/advisor ") || text === "/advisor") {
+				const task = text.startsWith("/advisor ") ? text.slice(9).trim() : undefined;
+				await this.handleAdvisorCommand(task);
+				this.editor.setText("");
+				return;
+			}
+
 			// Handle bash command (! for normal, !! for excluded from context)
 			if (text.startsWith("!")) {
 				const isExcluded = text.startsWith("!!");
@@ -3092,7 +3101,7 @@ export class InteractiveMode {
 	}
 
 	showNewVersionNotification(newVersion: string): void {
-		const action = theme.fg("accent", getUpdateInstruction("@mariozechner/pi-coding-agent"));
+		const action = theme.fg("accent", getUpdateInstruction("@oxipi/coding-agent"));
 		const updateInstruction = theme.fg("muted", `New version ${newVersion} is available. `) + action;
 		const changelogUrl = theme.fg(
 			"accent",
@@ -4705,6 +4714,67 @@ export class InteractiveMode {
 		}
 
 		this.bashComponent = undefined;
+		this.ui.requestRender();
+	}
+
+	private async handleAdvisorCommand(task?: string): Promise<void> {
+		if (!task) {
+			const entries = this.sessionManager.getEntries();
+			for (let i = entries.length - 1; i >= 0; i--) {
+				const entry = entries[i] as any;
+				if (entry.type === "message" && entry.role === "user" && entry.text) {
+					task = entry.text;
+					break;
+				}
+			}
+		}
+
+		if (!task) {
+			this.showWarning("Use /advisor <task>");
+			return;
+		}
+
+		const { createAdvisorSystem } = await import("../../core/advisor/index.js");
+		const registry = this.session.modelRegistry;
+		const { orchestrator } = createAdvisorSystem(registry);
+
+		const progress = new AdvisorProgressComponent();
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.chatContainer.addChild(progress);
+		this.chatContainer.addChild(new DynamicBorder());
+
+		this.statusContainer.clear();
+		this.statusContainer.addChild(new Text("Advisor running...", 1));
+
+		const result = await orchestrator.run(task, undefined, (evt) => {
+			switch (evt.type) {
+				case "advisor_start":
+					progress.setAdvisorPlanning(evt.model);
+					break;
+				case "advisor_done":
+					progress.updateAdvisorOutput(evt.plan.substring(0, 200));
+					break;
+				case "worker_start":
+					progress.setExecutorRunning(evt.model);
+					break;
+				case "worker_output":
+					progress.updateExecutorOutput(evt.output.substring(0, 200));
+					break;
+				case "complete":
+					progress.setCompleted(evt.result.output || "done");
+					break;
+				case "error":
+					progress.setError(evt.error);
+					break;
+			}
+			this.ui.requestRender();
+		});
+
+		if (!result.success) {
+			this.showWarning(`Advisor failed: ${result.error}`);
+		}
+		this.statusContainer.clear();
 		this.ui.requestRender();
 	}
 
