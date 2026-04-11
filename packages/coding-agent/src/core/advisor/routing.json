@@ -1,0 +1,97 @@
+{
+  "$schema": "./schemas/routing-schema.json",
+  "version": "1.0",
+  
+  "tasks": {
+    "reasoning": {
+      "description": "복잡한 추론, 분석, 전략 수립",
+      "advisor": {
+        "provider": "github-copilot",
+        "model": "claude-opus-4.6"
+      },
+      "executor": {
+        "provider": "github-copilot", 
+        "model": "claude-sonnet-4.5"
+      },
+      "maxIterations": 3
+    },
+    
+    "codeGeneration": {
+      "description": "코드 작성, 리팩토링",
+      "advisor": {
+        "provider": "github-copilot",
+        "model": "claude-sonnet-4.5"
+      },
+      "executor": {
+        "provider": "github-copilot",
+        "model": "claude-haiku-4.5"
+      },
+      "maxIterations": 2
+    },
+    
+    "webSearch": {
+      "description": "웹 검색 및 정보 수집",
+      "advisor": {
+        "provider": "zai",
+        "model": "glm-4.5-flash"
+      },
+      "executor": {
+        "provider": "zai",
+        "model": "glm-4.5"
+      },
+      "maxIterations": 1
+    },
+    
+    "imageProcessing": {
+      "description": "이미지 분석, 수정",
+      "advisor": {
+        "provider": "github-copilot",
+        "model": "claude-opus-4.6"
+      },
+      "executor": {
+        "provider": "github-copilot",
+        "model": "claude-sonnet-4.5"
+      },
+      "maxIterations": 2
+    },
+    
+    "review": {
+      "description": "코드 리뷰, 디버깅",
+      "advisor": {
+        "provider": "github-copilot",
+        "model": "claude-opus-4.6"
+      },
+      "executor": {
+        "provider": "github-copilot",
+        "model": "claude-opus-4.6"
+      },
+      "maxIterations": 3
+    },
+    
+    "simple": {
+      "description": "단순 작업, 요약, 번역",
+      "advisor": {
+        "provider": "zai",
+        "model": "glm-4.5-flash"
+      },
+      "executor": {
+        "provider": "zai",
+        "model": "glm-4.5-flash"
+      },
+      "maxIterations": 1
+    },
+    
+    "default": {
+      "description": "기본 태스크 타입",
+      "advisor": {
+        "provider": "github-copilot",
+        "model": "claude-sonnet-4.5"
+      },
+      "executor": {
+        "provider": "github-copilot",
+        "model": "claude-sonnet-4.5"
+      },
+      "maxIterations": 2
+    }
+  }
+}
