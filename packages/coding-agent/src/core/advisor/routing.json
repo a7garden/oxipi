@@ -1,93 +1,93 @@
 {
   "$schema": "./schemas/routing-schema.json",
   "version": "1.0",
-  
+
   "tasks": {
     "reasoning": {
-      "description": "복잡한 추론, 분석, 전략 수립",
+      "description": "Complex reasoning, analysis, strategy",
       "advisor": {
         "provider": "github-copilot",
         "model": "claude-opus-4.6"
       },
-      "executor": {
-        "provider": "github-copilot", 
+      "worker": {
+        "provider": "github-copilot",
         "model": "claude-sonnet-4.5"
       },
       "maxIterations": 3
     },
-    
+
     "codeGeneration": {
-      "description": "코드 작성, 리팩토링",
+      "description": "Code writing, refactoring",
       "advisor": {
         "provider": "github-copilot",
         "model": "claude-sonnet-4.5"
       },
-      "executor": {
+      "worker": {
         "provider": "github-copilot",
         "model": "claude-haiku-4.5"
       },
       "maxIterations": 2
     },
-    
+
     "webSearch": {
-      "description": "웹 검색 및 정보 수집",
+      "description": "Web search and information gathering",
       "advisor": {
         "provider": "zai",
         "model": "glm-4.5-flash"
       },
-      "executor": {
+      "worker": {
         "provider": "zai",
         "model": "glm-4.5"
       },
       "maxIterations": 1
     },
-    
+
     "imageProcessing": {
-      "description": "이미지 분석, 수정",
+      "description": "Image analysis, modification",
       "advisor": {
         "provider": "github-copilot",
         "model": "claude-opus-4.6"
       },
-      "executor": {
+      "worker": {
         "provider": "github-copilot",
         "model": "claude-sonnet-4.5"
       },
       "maxIterations": 2
     },
-    
+
     "review": {
-      "description": "코드 리뷰, 디버깅",
+      "description": "Code review, debugging",
       "advisor": {
         "provider": "github-copilot",
         "model": "claude-opus-4.6"
       },
-      "executor": {
+      "worker": {
         "provider": "github-copilot",
         "model": "claude-opus-4.6"
       },
       "maxIterations": 3
     },
-    
+
     "simple": {
-      "description": "단순 작업, 요약, 번역",
+      "description": "Simple tasks, summaries, translations",
       "advisor": {
         "provider": "zai",
         "model": "glm-4.5-flash"
       },
-      "executor": {
+      "worker": {
         "provider": "zai",
         "model": "glm-4.5-flash"
       },
       "maxIterations": 1
     },
-    
+
     "default": {
-      "description": "기본 태스크 타입",
+      "description": "Default task type",
       "advisor": {
         "provider": "github-copilot",
         "model": "claude-sonnet-4.5"
       },
-      "executor": {
+      "worker": {
         "provider": "github-copilot",
         "model": "claude-sonnet-4.5"
       },

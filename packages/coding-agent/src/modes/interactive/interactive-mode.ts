@@ -4717,7 +4717,7 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private async handleAdvisorCommand(task?: string): Promise<void> {
+		private async handleAdvisorCommand(task?: string): Promise<void> {
 		if (!task) {
 			const entries = this.sessionManager.getEntries();
 			for (let i = entries.length - 1; i >= 0; i--) {
@@ -4728,7 +4728,6 @@ export class InteractiveMode {
 				}
 			}
 		}
-
 		if (!task) {
 			this.showWarning("Use /advisor <task>");
 			return;
@@ -4736,7 +4735,8 @@ export class InteractiveMode {
 
 		const { createAdvisorSystem } = await import("../../core/advisor/index.js");
 		const registry = this.session.modelRegistry;
-		const { orchestrator } = createAdvisorSystem(registry);
+		const cwd = this.sessionManager.getCwd();
+		const { orchestrator } = createAdvisorSystem(registry, undefined, cwd);
 
 		const progress = new AdvisorProgressComponent();
 		this.chatContainer.addChild(new Spacer(1));
@@ -4752,14 +4752,23 @@ export class InteractiveMode {
 				case "advisor_start":
 					progress.setAdvisorPlanning(evt.model);
 					break;
+				case "advisor_text":
+					progress.updateAdvisorStream(evt.text);
+					break;
+				case "advisor_tool":
+					progress.setAdvisorTool(evt.tool);
+					break;
 				case "advisor_done":
-					progress.updateAdvisorOutput(evt.plan.substring(0, 200));
+					progress.setAdvisorDone();
 					break;
 				case "worker_start":
 					progress.setExecutorRunning(evt.model);
 					break;
-				case "worker_done":
-					progress.updateExecutorOutput(evt.output.substring(0, 200));
+				case "worker_text":
+					progress.updateWorkerStream(evt.text);
+					break;
+				case "worker_tool":
+					progress.setWorkerTool(evt.tool);
 					break;
 				case "complete":
 					progress.setCompleted(evt.result.output || "done");
