@@ -238,6 +238,7 @@ export class InteractiveMode {
 	private advisorQuestionFilterSubAgentId: string | undefined;
 	private advisorParallelMinBranches = 3;
 	private advisorParallelMaxBranches = 5;
+	private advisorAutoDelegationEnabled = true;
 	private advisorHistory: string[] = [];
 	private advisorRunInProgress = false;
 
@@ -679,6 +680,13 @@ export class InteractiveMode {
 		while (true) {
 			const userInput = await this.getUserInput();
 			try {
+				const autoDecision = await this.shouldAutoDelegateToSubAgents(userInput);
+				if (autoDecision.delegate) {
+					this.pushAdvisorHistory(`auto delegation selected (${autoDecision.reason})`);
+					this.showStatus(`Auto-delegating to sub-agents (${autoDecision.reason})`);
+					await this.handleAdvisorWorktreeParallelCommand(userInput);
+					continue;
+				}
 				await this.session.prompt(userInput);
 			} catch (error: unknown) {
 				const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
@@ -4793,6 +4801,44 @@ export class InteractiveMode {
 			}
 		}
 		return undefined;
+	}
+
+	private async shouldAutoDelegateToSubAgents(task: string): Promise<{ delegate: boolean; reason: string }> {
+		if (!this.advisorAutoDelegationEnabled) return { delegate: false, reason: "disabled" };
+		if (this.advisorRunInProgress) return { delegate: false, reason: "advisor already running" };
+
+		const normalized = task.trim();
+		if (!normalized) return { delegate: false, reason: "empty" };
+		if (normalized.startsWith("/") || normalized.startsWith("!")) return { delegate: false, reason: "command" };
+
+		let score = 0;
+		if (normalized.length > 220) score += 2;
+		else if (normalized.length > 130) score += 1;
+		if (normalized.includes("\n")) score += 1;
+
+		if (
+			/\b(architecture|design|plan|strategy|refactor|migrate|multi-file|multi file|large|complex|analyze|investigate|edge case|regression|parallel)\b/i.test(
+				normalized,
+			)
+		)
+			score += 2;
+
+		if (/\b(quick|simple|just|hello|translate|explain briefly)\b/i.test(normalized)) score -= 2;
+
+		let taskType = "default";
+		try {
+			const { TaskClassifier } = await import("../../core/advisor/index.js");
+			const classifier = new TaskClassifier(this.session.modelRegistry);
+			taskType = await classifier.classify(normalized);
+		} catch {
+			// Fallback to heuristic only
+		}
+
+		if (taskType === "reasoning" || taskType === "review") score += 1;
+		if (taskType === "codeGeneration" && normalized.length > 180) score += 1;
+
+		const delegate = score >= 3;
+		return { delegate, reason: `score=${score}, type=${taskType}` };
 	}
 
 	private pushAdvisorHistory(line: string): void {
