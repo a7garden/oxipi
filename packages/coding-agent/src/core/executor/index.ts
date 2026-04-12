@@ -69,6 +69,17 @@ export class Executor {
 	}
 
 	/**
+	 * Clean up a worktree created during worktree-mode subtask execution.
+	 *
+	 * When spawnSubtasks() succeeds with worktree mode, it returns results with
+	 * `cleaned: false` for successful subtasks. The caller is responsible for cleanup —
+	 * this method delegates to WorktreePool.cleanup() to release the worktree resources.
+	 */
+	async cleanupWorktree(worktreePath: string): Promise<void> {
+		return this.worktreePool.cleanup(worktreePath);
+	}
+
+	/**
 	 * Decompose a task into subtasks using simple sentence-split decomposition.
 	 *
 	 * Splits on sentence boundaries (.!?) and groups sentences into at most

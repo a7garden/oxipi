@@ -315,6 +315,19 @@ export class WorktreePool implements SubtaskPool {
 	}
 
 	/**
+	 * Clean up a worktree created by this pool.
+	 * Called by the caller when a subtask succeeds (cleaned: false) to release resources.
+	 */
+	async cleanup(worktreePath: string): Promise<void> {
+		try {
+			const wm = new WorktreeManager(this.repoPath);
+			await wm.remove(worktreePath, true);
+		} catch {
+			// Ignore cleanup errors
+		}
+	}
+
+	/**
 	 * Run a process and return a reference to it for cancellation.
 	 */
 	private runProcessWithProcRef(
