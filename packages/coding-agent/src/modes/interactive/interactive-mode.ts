@@ -71,7 +71,7 @@ import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
 import { parseGitUrl } from "../../utils/git.js";
 import { ensureTool } from "../../utils/tools-manager.js";
-import { AdvisorProgressComponent } from "./components/advisor-ui.js";
+import { AdvisorPendingQuestionsComponent, AdvisorProgressComponent } from "./components/advisor-ui.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
@@ -228,6 +228,7 @@ export class InteractiveMode {
 			timeout: NodeJS.Timeout;
 		}
 	>();
+	private advisorQuestionsComponent: AdvisorPendingQuestionsComponent | undefined;
 
 	// Auto-compaction state
 	private autoCompactionLoader: Loader | undefined = undefined;
@@ -4841,9 +4842,12 @@ export class InteractiveMode {
 		const { spawner } = createAdvisorSystem(registry, undefined, process.cwd());
 
 		const progress = new AdvisorProgressComponent();
+		this.advisorQuestionsComponent = new AdvisorPendingQuestionsComponent();
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new DynamicBorder());
 		this.chatContainer.addChild(progress);
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(this.advisorQuestionsComponent);
 		this.chatContainer.addChild(new DynamicBorder());
 		this.statusContainer.clear();
 		this.statusContainer.addChild(
@@ -4864,9 +4868,12 @@ export class InteractiveMode {
 			},
 			onQuestion: async (q) => {
 				progress.setWorkerTool(`question from ${q.subAgentId}: ${q.question.substring(0, 90)}`);
+				this.advisorQuestionsComponent?.upsertQuestion(q.correlationId, q.subAgentId, q.question);
 				this.showWarning(
 					`Sub-agent question (${q.correlationId}): ${q.question}${q.context ? `\ncontext: ${q.context}` : ""}\n답변: /advisor-reply ${q.correlationId} <text>`,
 				);
+				this.editor.setText(`/advisor-reply ${q.correlationId} `);
+				this.ui.setFocus(this.editor);
 				this.ui.requestRender();
 				return this.waitForAdvisorReply(q.correlationId, q.subAgentId, q.question, q.context);
 			},
@@ -4878,6 +4885,7 @@ export class InteractiveMode {
 			progress.setError(result.error || "worktree sub-agent failed");
 		}
 		this.statusContainer.clear();
+		this.advisorQuestionsComponent = undefined;
 		this.ui.requestRender();
 	}
 
@@ -4890,6 +4898,7 @@ export class InteractiveMode {
 		return new Promise((resolve) => {
 			const timeout = setTimeout(() => {
 				this.advisorPendingQuestions.delete(correlationId);
+				this.advisorQuestionsComponent?.removeQuestion(correlationId);
 				resolve("Proceed with best judgment and continue.");
 			}, 120000);
 
@@ -4926,6 +4935,7 @@ export class InteractiveMode {
 		}
 
 		this.advisorPendingQuestions.delete(correlationId);
+		this.advisorQuestionsComponent?.removeQuestion(correlationId);
 		clearTimeout(pending.timeout);
 		pending.resolve(reply);
 		this.showStatus(`Sent advisor reply to ${pending.subAgentId} (${correlationId})`);

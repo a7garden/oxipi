@@ -97,6 +97,47 @@ export class AdvisorProgressComponent extends Container {
 	}
 }
 
+export class AdvisorPendingQuestionsComponent extends Container {
+	private title: Text;
+	private lines: Text[] = [];
+	private questions = new Map<string, { subAgentId: string; question: string }>();
+
+	constructor() {
+		super();
+		this.title = new Text(theme.fg("accent", "Sub-agent Questions (pending: 0)"), 1, 0);
+		this.addChild(this.title);
+	}
+
+	upsertQuestion(correlationId: string, subAgentId: string, question: string): void {
+		this.questions.set(correlationId, { subAgentId, question });
+		this.renderQuestions();
+	}
+
+	removeQuestion(correlationId: string): void {
+		this.questions.delete(correlationId);
+		this.renderQuestions();
+	}
+
+	private renderQuestions(): void {
+		for (const line of this.lines) this.removeChild(line);
+		this.lines = [];
+		this.title.setText(theme.fg("accent", `Sub-agent Questions (pending: ${this.questions.size})`));
+
+		for (const [id, q] of this.questions.entries()) {
+			const text = new Text(
+				theme.fg(
+					"muted",
+					`- ${id} [${q.subAgentId}] ${q.question.substring(0, 90)}${q.question.length > 90 ? "..." : ""}`,
+				),
+				1,
+				0,
+			);
+			this.lines.push(text);
+			this.addChild(text);
+		}
+	}
+}
+
 export class WorkTreeProgressComponent extends Container {
 	private branches: Map<string, { text: Text; completed: boolean; failed: boolean }> = new Map();
 	private statusLine: Text;
