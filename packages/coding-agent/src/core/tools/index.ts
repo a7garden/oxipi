@@ -53,7 +53,6 @@ export {
 	lsToolDefinition,
 } from "./ls.js";
 export { createPlannerToolDefinition } from "./planner-tool.js";
-export { createSpawnSubagentsToolDefinition, type SpawnSubagentsParams, type SpawnSubagentsResult } from "./spawn-subagents-tool.js";
 export {
 	createReadTool,
 	createReadToolDefinition,
@@ -64,6 +63,11 @@ export {
 	readTool,
 	readToolDefinition,
 } from "./read.js";
+export {
+	createSpawnSubagentsToolDefinition,
+	type SpawnSubagentsParams,
+	type SpawnSubagentsResult,
+} from "./spawn-subagents-tool.js";
 export {
 	createReceiveFromParentToolDefinition,
 	createSendReplyToParentToolDefinition,
