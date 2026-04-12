@@ -95,6 +95,9 @@ export interface SpawnOptions {
 	provider?: string;
 	cwd?: string;
 	timeout?: number;
+	parallelism?: number;
+	command?: string;
+	questionPollMs?: number;
 	onStdout?: (line: string) => void;
 	onStderr?: (line: string) => void;
 	onQuestion?: (question: {
@@ -651,6 +654,8 @@ export class SubAgentSpawner {
 		const wm = opts.cwd ? new WorktreeManager(opts.cwd) : this.worktreeManager;
 		const routing = this.router.getRouting(taskType);
 		const model = opts.model || routing.worker.model;
+		const command = opts.command || "oxipi";
+		const pollMs = Math.max(200, opts.questionPollMs ?? 1000);
 		const branchName = `oxipi-${id}-${Date.now()}`;
 		let worktreePath: string | null = null;
 
@@ -672,29 +677,39 @@ export class SubAgentSpawner {
 			await bus.append({ type: "sub_ready", subAgentId: id, timestamp: Date.now() });
 
 			let offset = 0;
-			const questionLoop = setInterval(async () => {
-				const read = await bus.readSince(offset);
-				offset = read.nextOffset;
-				for (const msg of read.messages) {
-					if (msg.type !== "sub_question") continue;
-					const replyText =
-						(await opts.onQuestion?.({
-							subAgentId: msg.subAgentId,
-							correlationId: msg.correlationId,
-							question: msg.question,
-							context: msg.context,
-						})) ?? "Proceed with best judgment and continue.";
-					await bus.append({
-						type: "parent_reply",
-						subAgentId: msg.subAgentId,
-						correlationId: msg.correlationId,
-						reply: replyText,
-						timestamp: Date.now(),
-					});
+			let stopPolling = false;
+			const questionPollLoop = (async () => {
+				while (!stopPolling) {
+					try {
+						const read = await bus.readSince(offset);
+						offset = read.nextOffset;
+						for (const msg of read.messages) {
+							if (msg.type !== "sub_question") continue;
+							const replyText =
+								(await opts.onQuestion?.({
+									subAgentId: msg.subAgentId,
+									correlationId: msg.correlationId,
+									question: msg.question,
+									context: msg.context,
+								})) ?? "Proceed with best judgment and continue.";
+							await bus.append({
+								type: "parent_reply",
+								subAgentId: msg.subAgentId,
+								correlationId: msg.correlationId,
+								reply: replyText,
+								timestamp: Date.now(),
+							});
+						}
+					} catch {
+						// Keep loop alive in MVP hardening mode.
+					}
+					if (!stopPolling) {
+						await new Promise((resolve) => setTimeout(resolve, pollMs));
+					}
 				}
-			}, 1000);
+			})();
 
-			const output = await this.runProcess("oxipi", ["-p", "--no-session", "--model", model, task], {
+			const output = await this.runProcess(command, ["-p", "--no-session", "--model", model, task], {
 				cwd: worktreePath,
 				timeout: opts.timeout || 300000,
 				onStdout: opts.onStdout,
@@ -704,7 +719,8 @@ export class SubAgentSpawner {
 					OXIPI_SUBAGENT_ID: id,
 				},
 			});
-			clearInterval(questionLoop);
+			stopPolling = true;
+			await questionPollLoop;
 			await bus.append({
 				type: output.exitCode === 0 ? "sub_done" : "sub_error",
 				subAgentId: id,
@@ -744,6 +760,8 @@ export class SubAgentSpawner {
 		onProgress?: (id: string, line: string) => void,
 	): Promise<Map<string, SubAgentResult>> {
 		const wm = opts.cwd ? new WorktreeManager(opts.cwd) : this.worktreeManager!;
+		const command = opts.command || "oxipi";
+		const parallelism = Math.max(1, Math.min(opts.parallelism ?? 3, Math.max(1, tasks.length)));
 		const branches = new Map<string, WorktreeInfo>();
 
 		// Pre-create all worktrees
@@ -757,8 +775,7 @@ export class SubAgentSpawner {
 			}
 		}
 
-		// Spawn all in parallel
-		const spawns = tasks.map(async (task) => {
+		const executeTask = async (task: SubAgentTask): Promise<SubAgentResult> => {
 			const branch = branches.get(task.id);
 			const routing = this.router.getRouting(task.type);
 			const model = opts.model || routing.worker.model;
@@ -767,7 +784,7 @@ export class SubAgentSpawner {
 			let errOut = "";
 
 			try {
-				const result = await this.runProcess("oxipi", ["-p", "--no-session", "--model", model, task.task], {
+				const result = await this.runProcess(command, ["-p", "--no-session", "--model", model, task.task], {
 					cwd: branch?.path || opts.cwd || ".",
 					timeout: opts.timeout || 300000,
 					onStdout: (line) => {
@@ -797,9 +814,18 @@ export class SubAgentSpawner {
 					branch: branch?.branch,
 				};
 			}
-		});
+		};
 
-		const results = await Promise.all(spawns);
+		const results: SubAgentResult[] = [];
+		let index = 0;
+		const workers = Array.from({ length: parallelism }, async () => {
+			while (true) {
+				const current = index++;
+				if (current >= tasks.length) break;
+				results.push(await executeTask(tasks[current]));
+			}
+		});
+		await Promise.all(workers);
 
 		// Cleanup all worktrees
 		await Promise.allSettled(Array.from(branches.values()).map((b) => wm.remove(b.path, true)));
