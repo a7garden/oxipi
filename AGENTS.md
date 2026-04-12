@@ -73,16 +73,16 @@ When closing issues via commit:
 - GitHub CLI for issues/PRs
 - Add package labels to issues/PRs: pkg:agent, pkg:ai, pkg:coding-agent, pkg:mom, pkg:pods, pkg:tui, pkg:web-ui
 
-## Testing pi Interactive Mode with tmux
+## Testing OXI Interactive Mode with tmux
 
-To test pi's TUI in a controlled terminal environment:
+To test oxipi's TUI in a controlled terminal environment:
 
 ```bash
 # Create tmux session with specific dimensions
 tmux new-session -d -s pi-test -x 80 -y 24
 
-# Start pi from source
-tmux send-keys -t pi-test "cd /Users/badlogic/workspaces/pi-mono && ./pi-test.sh" Enter
+# Start oxipi from source
+tmux send-keys -t pi-test "cd /Users/won/workspaces/oxipi && ./oxipi-test.sh" Enter
 
 # Wait for startup, then capture output
 sleep 3 && tmux capture-pane -t pi-test -p
@@ -98,7 +98,9 @@ tmux send-keys -t pi-test C-o  # ctrl+o
 tmux kill-session -t pi-test
 ```
 
-## Style
+## Attribution
+- **Internal changes (from issues)**: `Fixed foo bar ([#123](https://github.com/a7garden/oxipi/issues/123))`
+- **External contributions**: `Added feature X ([#456](https://github.com/a7garden/oxipi/pull/456) by [@username](https://github.com/username))`
 - Keep answers short and concise
 - No emojis in commits, issues, PR comments, or code
 - No fluff or cheerful filler text
@@ -121,10 +123,6 @@ Use these sections under `## [Unreleased]`:
 - Append to existing subsections (e.g., `### Fixed`), do not create duplicates
 - NEVER modify already-released version sections (e.g., `## [0.12.2]`)
 - Each version section is immutable once released
-
-### Attribution
-- **Internal changes (from issues)**: `Fixed foo bar ([#123](https://github.com/badlogic/pi-mono/issues/123))`
-- **External contributions**: `Added feature X ([#456](https://github.com/badlogic/pi-mono/pull/456) by [@username](https://github.com/username))`
 
 ## Adding a New LLM Provider (packages/ai)
 
