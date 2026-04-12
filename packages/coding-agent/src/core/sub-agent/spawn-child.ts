@@ -1,6 +1,6 @@
 /**
  * Child process entry point for SubAgentSpawner.
- * Receives task and type as CLI args, runs the advisor agent,
+ * Receives task and type as CLI args, runs the planner agent,
  * and writes JSON result to stdout.
  */
 

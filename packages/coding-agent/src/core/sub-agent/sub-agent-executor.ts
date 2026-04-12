@@ -1,7 +1,7 @@
 /**
- * OxiPi Advisor System — Executor + Planner advisory pattern
+ * OxiPi Planner System — Executor + Planner guidance pattern
  *
- *   Task → Executor(m2.7) runs with advisor tool
+ *   Task → Executor(m2.7) runs with planner tool
  *                ↓ (when needed)
  *           Planner(glm-5.1) provides guidance
  *                ↓
@@ -148,6 +148,7 @@ export interface SubAgentResult {
 	duration: number;
 	worktree?: string;
 	branch?: string;
+	cleaned: boolean; // true if worktree was cleaned up by spawner, false if caller should cleanup
 }
 
 export interface WorktreeInfo {
@@ -174,6 +175,8 @@ export interface SpawnOptions {
 		question: string;
 		context?: string;
 	}) => Promise<string> | string;
+	/** External stop signal - when stopped.stopped becomes true, the task will abort */
+	externalStop?: { stopped: boolean };
 }
 
 export type ProgressCallback = (event: SubAgentEvent) => void;
@@ -229,7 +232,7 @@ export class ModelRouter {
 		tasks: Record<
 			string,
 			{
-				advisor?: { provider: string; model: string };
+				planner?: { provider: string; model: string };
 				worker?: { provider: string; model: string };
 				description?: string;
 			}
@@ -238,7 +241,7 @@ export class ModelRouter {
 		const modelList: string[] = [];
 		for (const task of Object.values(v1Config.tasks)) {
 			if (task.worker) modelList.push(`${task.worker.provider}/${task.worker.model}`);
-			if (task.advisor) modelList.push(`${task.advisor.provider}/${task.advisor.model}`);
+			if (task.planner) modelList.push(`${task.planner.provider}/${task.planner.model}`);
 		}
 		return {
 			version: "2.0",
@@ -282,8 +285,8 @@ export class ModelRouter {
 
 export interface SubAgentExecutorConfig {
 	executorModel: Model<Api>;
-	advisorModel: string;
-	advisorMaxUses?: number;
+	plannerModel: string;
+	plannerMaxUses?: number;
 	maxIterations?: number;
 }
 
@@ -292,17 +295,17 @@ export interface SubAgentExecutorConfig {
 // =============================================================================
 
 /**
- * SubAgentExecutor — Executor with advisor tool for complex decisions.
+ * SubAgentExecutor — Executor with planner tool for complex decisions.
  *
  * Flow:
  * 1. Executor (m2.7) runs the task end-to-end
- * 2. When it encounters a complex decision, it calls the advisor tool
- * 3. Advisor (glm-5.1) provides guidance
+ * 2. When it encounters a complex decision, it calls the planner tool
+ * 3. Planner (glm-5.1) provides guidance
  * 4. Executor continues with the guidance
  *
- * This is the classic Advisor Strategy pattern:
+ * This is the classic Planner Strategy pattern:
  * - Single executor agent (not two-phase)
- * - Advisor is called dynamically when needed
+ * - Planner is called dynamically when needed
  * - Executor makes the final decision
  */
 export class SubAgentExecutor {
@@ -361,7 +364,7 @@ export class SubAgentExecutor {
 					headers: auth.headers || options?.headers ? { ...auth.headers, ...options?.headers } : undefined,
 				});
 			},
-			sessionId: `oxipi-advisor-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+			sessionId: `oxipi-planner-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
 		});
 
 		const unsub = onProgress
@@ -379,7 +382,7 @@ export class SubAgentExecutor {
 		// Message-based state (claw-code pattern)
 		const session = new SessionMessages();
 		session.addUser(
-			`## Task\n${task}\n\nExecute this task step by step. Use the advisor tool when you need guidance on complex decisions.`,
+			`## Task\n${task}\n\nExecute this task step by step. Use the planner tool when you need guidance on complex decisions.`,
 		);
 
 		try {
@@ -564,6 +567,7 @@ export class SubAgentSpawner {
 			output: result.output,
 			error: result.error,
 			duration: Date.now() - start,
+			cleaned: true, // in-process spawn, no worktree to cleanup
 		};
 	}
 
@@ -598,8 +602,9 @@ export class SubAgentSpawner {
 		const pollMs = Math.max(200, opts.questionPollMs ?? 1000);
 		const branchName = `oxipi-${id}-${Date.now()}`;
 		let worktreePath: string | null = null;
+		const externalStop = opts.externalStop;
 
-		if (!wm) return { id, status: "failed", error: "No worktree manager", duration: 0 };
+		if (!wm) return { id, status: "failed", error: "No worktree manager", duration: 0, cleaned: true };
 
 		const cleanup = async () => {
 			if (worktreePath) {
@@ -609,7 +614,14 @@ export class SubAgentSpawner {
 			}
 		};
 
+		let _procRef: { kill: (sig: string) => void } | null = null;
+
 		try {
+			// Check external stop before starting
+			if (externalStop?.stopped) {
+				throw new Error("Cancelled before start");
+			}
+
 			const info = await wm.create(branchName, "main");
 			worktreePath = info.path;
 			const ipcFile = join(worktreePath, ".oxipi", "subagent", `${id}.jsonl`);
@@ -620,6 +632,11 @@ export class SubAgentSpawner {
 			let stopPolling = false;
 			const questionPollLoop = (async () => {
 				while (!stopPolling) {
+					// Check external stop signal
+					if (externalStop?.stopped) {
+						stopPolling = true;
+						break;
+					}
 					try {
 						const read = await bus.readSince(offset);
 						offset = read.nextOffset;
@@ -651,16 +668,39 @@ export class SubAgentSpawner {
 				}
 			})();
 
-			const output = await this.runProcess(command, ["-p", "--no-session", "--model", model, task], {
-				cwd: worktreePath,
-				timeout: opts.timeout || 300000,
-				onStdout: opts.onStdout,
-				onStderr: opts.onStderr,
-				env: {
-					OXIPI_SUBAGENT_IPC_FILE: ipcFile,
-					OXIPI_SUBAGENT_ID: id,
+			const { proc, output } = await this.runProcessWithProcRef(
+				command,
+				["-p", "--no-session", "--model", model, task],
+				{
+					cwd: worktreePath,
+					timeout: opts.timeout || 300000,
+					onStdout: opts.onStdout,
+					onStderr: opts.onStderr,
+					env: {
+						OXIPI_SUBAGENT_IPC_FILE: ipcFile,
+						OXIPI_SUBAGENT_ID: id,
+					},
 				},
-			});
+			);
+			_procRef = proc;
+
+			// Check external stop before completing
+			if (externalStop?.stopped) {
+				proc.kill("SIGTERM");
+				stopPolling = true;
+				await questionPollLoop;
+				await cleanup();
+				return {
+					id,
+					status: "failed",
+					error: "Cancelled by external signal",
+					duration: Date.now() - start,
+					worktree: undefined,
+					branch: branchName,
+					cleaned: true,
+				};
+			}
+
 			stopPolling = true;
 			await questionPollLoop;
 			await bus.append({
@@ -680,18 +720,20 @@ export class SubAgentSpawner {
 				duration: Date.now() - start,
 				worktree: worktreePath,
 				branch: branchName,
+				cleaned: false, // caller is responsible for cleanup on success
 			};
 		} catch (e: any) {
+			// On exception, cleanup immediately and return failure
+			await cleanup();
 			return {
 				id,
 				status: "failed",
 				error: e.message,
 				duration: Date.now() - start,
-				worktree: worktreePath || undefined,
+				worktree: undefined,
 				branch: branchName,
+				cleaned: true,
 			};
-		} finally {
-			await cleanup();
 		}
 	}
 
@@ -720,21 +762,39 @@ export class SubAgentSpawner {
 		let index = 0;
 		let failedCount = 0;
 
+		// Track active task stop signals for cancellation
+		const activeStops = new Map<string, { stopped: boolean }>();
+		let globalStopped = false;
+
 		const workers = Array.from({ length: parallelism }, async () => {
 			while (true) {
+				if (globalStopped) break;
 				if (failFast && failedCount > 0) break;
-				if (Date.now() >= deadline) break;
+				if (Date.now() >= deadline) {
+					// Signal all active tasks to stop
+					globalStopped = true;
+					for (const stop of activeStops.values()) {
+						stop.stopped = true;
+					}
+					break;
+				}
 				const current = index++;
 				if (current >= selectedTasks.length) break;
 				const task = selectedTasks[current];
 
+				// Create stop signal for this task
+				const stopSignal = { stopped: false };
+				activeStops.set(task.id, stopSignal);
+
 				const remaining = deadline - Date.now();
 				if (!Number.isFinite(remaining) || remaining <= 0) {
+					activeStops.delete(task.id);
 					results.push({
 						id: task.id,
 						status: "failed",
 						error: "Global timeout reached before execution",
 						duration: 0,
+						cleaned: true,
 					});
 					failedCount++;
 					continue;
@@ -744,6 +804,7 @@ export class SubAgentSpawner {
 				const result = await this.spawnInWorktree(task.id, task.task, task.type, {
 					...opts,
 					timeout: perTaskTimeout,
+					externalStop: stopSignal,
 					onStdout: (line) => {
 						onProgress?.(task.id, line);
 						opts.onStdout?.(line);
@@ -752,6 +813,7 @@ export class SubAgentSpawner {
 						opts.onStderr?.(line);
 					},
 				});
+				activeStops.delete(task.id);
 				results.push(result);
 				if (result.status === "failed") {
 					failedCount++;
@@ -770,7 +832,8 @@ export class SubAgentSpawner {
 		return map;
 	}
 
-	private runProcess(
+	/** Like runProcess but also returns a reference to the spawned process for cancellation */
+	private runProcessWithProcRef(
 		cmd: string,
 		args: string[],
 		opts: {
@@ -780,11 +843,15 @@ export class SubAgentSpawner {
 			onStderr?: (line: string) => void;
 			env?: Record<string, string>;
 		},
-	): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+	): Promise<{
+		proc: { kill: (sig: string | number) => void };
+		output: { stdout: string; stderr: string; exitCode: number };
+	}> {
 		return new Promise((resolve) => {
 			let stdout = "";
 			let stderr = "";
 			let killed = false;
+			let resolved = false;
 
 			const proc = spawn(cmd, args, {
 				cwd: opts.cwd || process.cwd(),
@@ -808,15 +875,34 @@ export class SubAgentSpawner {
 				opts.onStderr?.(line.trim());
 			});
 			proc.on("close", (code) => {
+				if (resolved) return;
+				resolved = true;
 				clearTimeout(timer);
 				if (killed) stderr += "\n[timeout]";
-				resolve({ stdout, stderr, exitCode: code ?? (killed ? -1 : 0) });
+				resolve({
+					proc: proc as unknown as { kill: (sig: string | number) => void },
+					output: { stdout, stderr, exitCode: code ?? (killed ? -1 : 0) },
+				});
 			});
 			proc.on("error", (_e) => {
+				if (resolved) return;
+				resolved = true;
 				clearTimeout(timer);
-				resolve({ stdout, stderr, exitCode: -1 });
+				resolve({
+					proc: proc as unknown as { kill: (sig: string | number) => void },
+					output: { stdout, stderr, exitCode: -1 },
+				});
 			});
 		});
+	}
+
+	/** Cleanup a worktree explicitly. Used when caller receives cleaned=false. */
+	async cleanupWorktree(worktreePath: string): Promise<void> {
+		if (this.worktreeManager) {
+			try {
+				await this.worktreeManager.remove(worktreePath, true);
+			} catch {}
+		}
 	}
 
 	async mergeResults(results: Map<string, SubAgentResult>): Promise<string> {

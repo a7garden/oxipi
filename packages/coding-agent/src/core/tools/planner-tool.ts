@@ -39,9 +39,10 @@ export type PlannerToolDetails = {
 	guided: boolean;
 };
 
-// Track usage per run to enforce maxUses
+// Track usage per session+run to enforce maxUses
+// Session-scoped to prevent cross-session usage bleed
 // Uses a bounded cache with timestamp-based cleanup to prevent memory leak
-const plannerUsagePerRun = new Map<string, { count: number; lastAccess: number }>();
+const plannerUsagePerRun = new Map<string, { count: number; lastAccess: number; sessionId: string }>();
 const USAGE_CACHE_MAX_ENTRIES = 1000;
 const USAGE_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -61,6 +62,17 @@ function cleanupPlannerUsageCache(): void {
 			plannerUsagePerRun.delete(entries[i][0]);
 		}
 	}
+}
+
+/** Generate a unique run ID to prevent collisions in concurrent calls */
+function generateRunId(): string {
+	const timestamp = Date.now().toString(36);
+	const random = Math.random().toString(36).slice(2, 8);
+	// Use crypto for additional randomness if available
+	if (typeof globalThis.crypto?.randomUUID === "function") {
+		return `${timestamp}-${globalThis.crypto.randomUUID()}`;
+	}
+	return `${timestamp}-${random}`;
 }
 
 export interface PlannerConfig {
@@ -108,10 +120,14 @@ export function createPlannerToolDefinition(registry: ModelRegistry, config: Par
 		) {
 			const startTime = Date.now();
 
-			// Get run ID for usage tracking
-			const runId = ctx.signal ? `run-${Date.now()}` : "single";
+			// Get session ID for cache scoping (prevents cross-session bleed)
+			const sessionId = ctx.sessionManager?.getSessionId() ?? "unknown";
+			// Generate unique run ID for this specific planner invocation
+			const runId = ctx.signal ? generateRunId() : "single";
+			const cacheKey = `${sessionId}:${runId}`;
+
 			cleanupPlannerUsageCache();
-			const entry = plannerUsagePerRun.get(runId) ?? { count: 0, lastAccess: 0 };
+			const entry = plannerUsagePerRun.get(cacheKey) ?? { count: 0, lastAccess: 0, sessionId };
 			const currentUsage = entry.count;
 
 			if (currentUsage >= mergedConfig.maxUses) {
@@ -190,7 +206,7 @@ export function createPlannerToolDefinition(registry: ModelRegistry, config: Par
 					},
 				);
 
-				plannerUsagePerRun.set(runId, { count: currentUsage + 1, lastAccess: Date.now() });
+				plannerUsagePerRun.set(cacheKey, { count: currentUsage + 1, lastAccess: Date.now(), sessionId });
 
 				const guidance = parseGuidanceResponse(response);
 
@@ -232,7 +248,7 @@ function parseModelString(modelString: string): { provider: string; modelId: str
 }
 
 function buildPlannerSystemPrompt(): string {
-	return `You are a senior software architect and technical advisor.
+	return `You are a senior software architect and technical planner.
 
 ## Your Role
 - Analyze code, architecture, and technical decisions

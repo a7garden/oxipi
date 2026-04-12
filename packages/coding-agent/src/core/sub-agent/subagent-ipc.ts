@@ -75,10 +75,39 @@ export class SubAgentIpcBus {
 	}
 
 	async readSince(offset: number): Promise<{ messages: SubAgentIpcMessage[]; nextOffset: number }> {
-		const messages = await this.readAll();
+		let raw = "";
+		try {
+			// Read only from offset position using readFile with byte offset
+			// This avoids re-reading the entire file on every poll
+			const fileHandle = await import("node:fs/promises").then((fs) => fs.open(this.filePath, "r"));
+			try {
+				const stats = await fileHandle.stat();
+				if (offset >= stats.size) {
+					return { messages: [], nextOffset: stats.size };
+				}
+				const buffer = Buffer.alloc(stats.size - offset);
+				await fileHandle.read(buffer, 0, buffer.length, offset);
+				raw = buffer.toString("utf-8");
+			} finally {
+				await fileHandle.close();
+			}
+		} catch {
+			return { messages: [], nextOffset: offset };
+		}
+
+		const result: SubAgentIpcMessage[] = [];
+		for (const line of raw.split("\n")) {
+			const trimmed = line.trim();
+			if (!trimmed) continue;
+			try {
+				result.push(JSON.parse(trimmed) as SubAgentIpcMessage);
+			} catch {
+				// Ignore malformed lines
+			}
+		}
 		return {
-			messages: messages.slice(Math.max(0, offset)),
-			nextOffset: messages.length,
+			messages: result,
+			nextOffset: offset + Buffer.byteLength(raw, "utf-8"),
 		};
 	}
 }

@@ -8013,7 +8013,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 196608,
-			maxTokens: 196608,
+			maxTokens: 8192,
 		} satisfies Model<"openai-completions">,
 		"minimax/minimax-m2.7": {
 			id: "minimax/minimax-m2.7",
@@ -9441,7 +9441,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 131072,
-			maxTokens: 131072,
+			maxTokens: 8192,
 		} satisfies Model<"openai-completions">,
 		"openai/gpt-oss-safeguard-20b": {
 			id: "openai/gpt-oss-safeguard-20b",
