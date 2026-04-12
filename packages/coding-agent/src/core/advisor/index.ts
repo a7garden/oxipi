@@ -14,5 +14,6 @@ export {
 	ModelRouter,
 	SubAgentSpawner,
 	TaskClassifier,
+	TaskSplitter,
 	WorkTree,
 } from "./advisor-agent.js";

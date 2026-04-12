@@ -37,6 +37,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "advisor", description: "Run advisor/worker multi-agent system" },
 	{ name: "advisor-worktree", description: "Run a worktree-isolated sub-agent (MVP parent/sub-agent IPC)" },
 	{ name: "advisor-worktree-parallel", description: "Run multiple worktree sub-agents in parallel and merge outputs" },
+	{ name: "advisor-parallel-config", description: "Set/show dynamic parallel branch range" },
 	{ name: "advisor-question-filter", description: "Filter pending sub-agent questions by source ID" },
 	{ name: "advisor-reply", description: "Reply to a pending sub-agent question" },
 	{ name: "advisor-config", description: "Show advisor routing configuration" },

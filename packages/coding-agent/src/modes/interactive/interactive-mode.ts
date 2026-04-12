@@ -236,6 +236,8 @@ export class InteractiveMode {
 	private advisorQuestionsComponent: AdvisorPendingQuestionsComponent | undefined;
 	private advisorReplyDialog: AdvisorReplyDialogComponent | undefined;
 	private advisorQuestionFilterSubAgentId: string | undefined;
+	private advisorParallelMinBranches = 3;
+	private advisorParallelMaxBranches = 5;
 	private advisorHistory: string[] = [];
 	private advisorRunInProgress = false;
 
@@ -2288,6 +2290,12 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text.startsWith("/advisor-parallel-config")) {
+				const arg = text.slice(24).trim();
+				await this.handleAdvisorParallelConfigCommand(arg);
+				this.editor.setText("");
+				return;
+			}
 			if (text.startsWith("/advisor-question-filter")) {
 				const arg = text.slice(24).trim();
 				await this.handleAdvisorQuestionFilterCommand(arg);
@@ -2732,14 +2740,12 @@ export class InteractiveMode {
 				break;
 			}
 			case "compactionSummary": {
-				this.chatContainer.addChild(new Spacer(1));
 				const component = new CompactionSummaryMessageComponent(message, this.getMarkdownThemeWithSettings());
 				component.setExpanded(this.toolOutputExpanded);
 				this.chatContainer.addChild(component);
 				break;
 			}
 			case "branchSummary": {
-				this.chatContainer.addChild(new Spacer(1));
 				const component = new BranchSummaryMessageComponent(message, this.getMarkdownThemeWithSettings());
 				component.setExpanded(this.toolOutputExpanded);
 				this.chatContainer.addChild(component);
@@ -4968,33 +4974,18 @@ export class InteractiveMode {
 		this.advisorRunInProgress = true;
 		this.pushAdvisorHistory(`advisor parallel worktree run started: ${task.substring(0, 120)}`);
 
-		const { createAdvisorSystem, TaskClassifier } = await import("../../core/advisor/index.js");
+		const { createAdvisorSystem, TaskClassifier, TaskSplitter } = await import("../../core/advisor/index.js");
 		const registry = this.session.modelRegistry;
 		const { spawner } = createAdvisorSystem(registry, undefined, process.cwd());
 		const classifier = new TaskClassifier(registry);
+		const splitter = new TaskSplitter(registry);
 		const primaryType = await classifier.classify(task);
-
-		const complexityHint =
-			task.length > 700 ||
-			/\b(and|also|plus|meanwhile|separately|in addition|migrate|refactor|test|docs)\b/i.test(task)
-				? 5
-				: task.length > 280
-					? 4
-					: 3;
-
-		const focusPool: Array<{ slug: string; focus: string; type: string }> = [
-			{ slug: "context", focus: "codebase context and relevant modules", type: "reasoning" },
-			{ slug: "impl", focus: "concrete implementation approach and file-level changes", type: "codeGeneration" },
-			{ slug: "risk", focus: "edge cases, risks, and validation strategy", type: "review" },
-			{ slug: "tests", focus: "test scenarios and regression prevention", type: "review" },
-			{ slug: "plan", focus: "execution ordering and dependency plan", type: primaryType || "default" },
-		];
-
-		const branchTasks = focusPool.slice(0, complexityHint).map((entry, idx) => ({
-			id: `sub-${idx + 1}-${entry.slug}`,
-			task: `${task}\n\nFocus: ${entry.focus}`,
-			type: entry.type,
-		}));
+		const branchTasks = await splitter.split(
+			task,
+			primaryType,
+			this.advisorParallelMinBranches,
+			this.advisorParallelMaxBranches,
+		);
 
 		const progress = new AdvisorProgressComponent();
 		const worktreeProgress = new WorkTreeProgressComponent(branchTasks.map((b) => b.id));
@@ -5051,6 +5042,33 @@ export class InteractiveMode {
 		this.closeAdvisorReplyDialog();
 		this.advisorRunInProgress = false;
 		this.ui.requestRender();
+	}
+
+	private async handleAdvisorParallelConfigCommand(arg: string): Promise<void> {
+		const normalized = arg.trim();
+		if (!normalized) {
+			this.showStatus(
+				`Advisor parallel config: min=${this.advisorParallelMinBranches}, max=${this.advisorParallelMaxBranches}`,
+			);
+			return;
+		}
+
+		const parts = normalized.split(/\s+/).filter(Boolean);
+		if (parts.length !== 2) {
+			this.showWarning("Usage: /advisor-parallel-config <min> <max>");
+			return;
+		}
+
+		const min = Number.parseInt(parts[0], 10);
+		const max = Number.parseInt(parts[1], 10);
+		if (!Number.isFinite(min) || !Number.isFinite(max) || min < 1 || max < 1 || min > max || max > 8) {
+			this.showWarning("Invalid range. Expected: 1 <= min <= max <= 8");
+			return;
+		}
+
+		this.advisorParallelMinBranches = min;
+		this.advisorParallelMaxBranches = max;
+		this.showStatus(`Advisor parallel config updated: min=${min}, max=${max}`);
 	}
 
 	private async handleAdvisorQuestionFilterCommand(arg: string): Promise<void> {

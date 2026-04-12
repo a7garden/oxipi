@@ -244,6 +244,101 @@ export class TaskClassifier {
 }
 
 // =============================================================================
+// Task Splitter — dynamic sub-task generation for parallel sub-agents
+// =============================================================================
+
+export class TaskSplitter {
+	private registry: ModelRegistry | null;
+
+	constructor(registry?: ModelRegistry) {
+		this.registry = registry ?? null;
+	}
+
+	async split(task: string, primaryType: string = "default", minCount = 3, maxCount = 5): Promise<SubAgentTask[]> {
+		if (this.registry) {
+			try {
+				const llmSplit = await this.splitWithLLM(task, minCount, maxCount);
+				if (llmSplit.length > 0) return llmSplit;
+			} catch {
+				// Fallback to heuristic splitter
+			}
+		}
+		return this.splitHeuristic(task, primaryType, minCount, maxCount);
+	}
+
+	private async splitWithLLM(task: string, minCount: number, maxCount: number): Promise<SubAgentTask[]> {
+		const models = this.registry!.getAvailable();
+		const fastModel =
+			models.find((m) => m.id.includes("haiku") || m.id.includes("flash") || m.id.includes("mini")) ?? models[0];
+		if (!fastModel) return [];
+
+		const auth = await this.registry!.getApiKeyAndHeaders(fastModel);
+		if (!auth.ok || !auth.apiKey) return [];
+
+		const context: Context = {
+			messages: [
+				{
+					role: "user",
+					content: `Split this coding task into ${minCount}-${maxCount} parallel sub-tasks. Return STRICT JSON array only.\n\nEach item: {"id":"slug","task":"...","type":"reasoning|codeGeneration|review|default"}.\n\nTask:\n${task}`,
+					timestamp: Date.now(),
+				},
+			],
+			systemPrompt: "You are a task decomposition planner. Return JSON only.",
+		};
+
+		const result = await completeSimple(fastModel, context, {
+			apiKey: auth.apiKey,
+			headers: auth.headers,
+		});
+
+		const text = result.content
+			.filter((c): c is Extract<typeof c, { type: "text" }> => c.type === "text")
+			.map((c) => c.text)
+			.join("")
+			.trim();
+
+		const start = text.indexOf("[");
+		const end = text.lastIndexOf("]");
+		if (start < 0 || end < 0 || end <= start) return [];
+
+		const raw = JSON.parse(text.slice(start, end + 1)) as Array<{ id?: string; task?: string; type?: string }>;
+		const normalized = raw
+			.filter((r) => typeof r.task === "string" && r.task.trim().length > 0)
+			.slice(0, maxCount)
+			.map((r, idx) => ({
+				id: `sub-${idx + 1}-${(r.id || `part-${idx + 1}`).toLowerCase().replace(/[^a-z0-9-]/g, "-")}`,
+				task: r.task!.trim(),
+				type: (r.type || "default").trim(),
+			}));
+
+		return normalized.length >= minCount ? normalized : [];
+	}
+
+	private splitHeuristic(task: string, primaryType: string, minCount: number, maxCount: number): SubAgentTask[] {
+		const complexityHint =
+			task.length > 700 ||
+			/\b(and|also|plus|meanwhile|separately|in addition|migrate|refactor|test|docs)\b/i.test(task)
+				? 5
+				: task.length > 280
+					? 4
+					: 3;
+		const count = Math.min(maxCount, Math.max(minCount, complexityHint));
+		const focusPool: Array<{ slug: string; focus: string; type: string }> = [
+			{ slug: "context", focus: "codebase context and relevant modules", type: "reasoning" },
+			{ slug: "impl", focus: "concrete implementation approach and file-level changes", type: "codeGeneration" },
+			{ slug: "risk", focus: "edge cases, risks, and validation strategy", type: "review" },
+			{ slug: "tests", focus: "test scenarios and regression prevention", type: "review" },
+			{ slug: "plan", focus: "execution ordering and dependency plan", type: primaryType || "default" },
+		];
+		return focusPool.slice(0, count).map((entry, idx) => ({
+			id: `sub-${idx + 1}-${entry.slug}`,
+			task: `${task}\n\nFocus: ${entry.focus}`,
+			type: entry.type,
+		}));
+	}
+}
+
+// =============================================================================
 // ToolAgent — Agent with tools + streaming events
 // =============================================================================
 
