@@ -18,6 +18,7 @@ import { convertToLlm } from "../messages.js";
 import type { ModelRegistry } from "../model-registry.js";
 import { createCodingTools } from "../tools/index.js";
 import { createPlannerToolDefinition } from "../tools/planner-tool.js";
+import { createSpawnSubagentsToolDefinition } from "../tools/spawn-subagents-tool.js";
 import { SubAgentIpcBus, type SubAgentIpcMessage } from "./subagent-ipc.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -288,6 +289,7 @@ export interface SubAgentExecutorConfig {
 	plannerModel: string;
 	plannerMaxUses?: number;
 	maxIterations?: number;
+	enableSubagentSpawning?: boolean;
 }
 
 // =============================================================================
@@ -312,12 +314,14 @@ export class SubAgentExecutor {
 	private executorModel: Model<Api>;
 	private plannerModel: Model<Api>;
 	private maxIterations: number;
+	private config?: SubAgentExecutorConfig;
 
 	constructor(registry: ModelRegistry, router: ModelRouter);
 	constructor(registry: ModelRegistry, executorModel: Model<Api>, plannerModel: Model<Api>);
+	constructor(registry: ModelRegistry, config: SubAgentExecutorConfig);
 	constructor(
 		private reg: ModelRegistry,
-		routerOrExecutor: ModelRouter | Model<Api>,
+		routerOrExecutor: ModelRouter | Model<Api> | SubAgentExecutorConfig,
 		plannerModel?: Model<Api>,
 	) {
 		if (routerOrExecutor instanceof ModelRouter) {
@@ -330,6 +334,13 @@ export class SubAgentExecutor {
 			this.executorModel = this.reg.find(p1, m1)!;
 			this.plannerModel = this.reg.find(p2, m2)!;
 			this.maxIterations = router.config.settings?.maxIterations ?? 3;
+		} else if (typeof routerOrExecutor === "object" && "executorModel" in routerOrExecutor) {
+			// Config-based: use config object directly
+			this.config = routerOrExecutor;
+			this.executorModel = routerOrExecutor.executorModel;
+			const [provider, modelId] = routerOrExecutor.plannerModel.split("/");
+			this.plannerModel = this.reg.find(provider, modelId)!;
+			this.maxIterations = routerOrExecutor.maxIterations ?? 3;
 		} else {
 			// Explicit models
 			this.executorModel = routerOrExecutor;
@@ -345,14 +356,23 @@ export class SubAgentExecutor {
 			plannerModel: `${this.plannerModel.provider}/${this.plannerModel.id}`,
 		});
 
-		const tools = [...createCodingTools(process.cwd()), plannerTool as unknown as AgentTool];
+		const allTools = [...createCodingTools(process.cwd()), plannerTool as unknown as AgentTool];
+
+		if (this.config?.enableSubagentSpawning) {
+			// Note: Using 'any' to break circular dependency - SubAgentExecutor and SubAgentSpawner are same class
+			const spawnSubagentsTool = createSpawnSubagentsToolDefinition(
+				this as any, // SubAgentSpawner (executor IS the spawner)
+				{ execute: plannerTool.execute.bind(plannerTool) }, // planner tool reference
+			);
+			allTools.push(spawnSubagentsTool as unknown as AgentTool);
+		}
 
 		const agent = new Agent({
 			initialState: {
 				systemPrompt: EXECUTOR_PROMPT,
 				model: this.executorModel,
 				thinkingLevel: this.executorModel.reasoning ? ("medium" as ThinkingLevel) : ("off" as ThinkingLevel),
-				tools,
+				tools: allTools,
 			},
 			convertToLlm,
 			streamFn: async (m, context, options) => {
