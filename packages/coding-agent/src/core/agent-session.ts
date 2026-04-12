@@ -1376,6 +1376,9 @@ export class AgentSession {
 		this.agent.state.model = model;
 		this.sessionManager.appendModelChange(model.provider, model.id);
 
+		// Persist model selection to settings
+		this.settingsManager.setDefaultModelAndProvider(model.provider, model.id);
+
 		// Re-clamp thinking level for new model's capabilities
 		this.setThinkingLevel(thinkingLevel);
 

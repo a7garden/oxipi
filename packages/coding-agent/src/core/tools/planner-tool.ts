@@ -83,7 +83,7 @@ export interface PlannerConfig {
 
 const DEFAULT_PLANNER_CONFIG: PlannerConfig = {
 	plannerModel: "", // Must be set
-	maxUses: 3,
+	maxUses: Infinity,
 	trigger: "manual",
 };
 
@@ -102,8 +102,9 @@ export function createPlannerToolDefinition(registry: ModelRegistry, config: Par
 		label: "Planner",
 		description:
 			"Consult a senior planner for guidance on complex decisions, architecture choices, or tricky problems. " +
-			"Use when you need expert-level analysis. The planner provides guidance (APPROVED/NEEDS_CHANGE/CONTINUE/STOP) " +
-			"but does NOT execute code — you continue based on the guidance.",
+			"REQUIRED: Use this tool when you encounter: (1) Multiple competing approaches with tradeoffs, (2) Architectural decisions that affect other parts of the codebase, (3) Uncertainty about the best path forward, (4) Complex refactoring with multiple valid options, (5) Any decision that could have significant consequences. " +
+			"The planner provides guidance (APPROVED/NEEDS_CHANGE/CONTINUE/STOP) but does NOT execute code — you continue based on the guidance. " +
+			"Do NOT skip this tool when facing complex situations — the planner exists precisely for these moments.",
 		parameters: plannerSchema,
 
 		async execute(

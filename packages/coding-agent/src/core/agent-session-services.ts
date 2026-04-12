@@ -179,7 +179,9 @@ export async function createAgentSessionServices(
 export async function createAgentSessionFromServices(
 	options: CreateAgentSessionFromServicesOptions,
 ): Promise<CreateAgentSessionResult> {
-	const plannerTool = createPlannerToolDefinition(options.services.modelRegistry);
+	const plannerTool = createPlannerToolDefinition(options.services.modelRegistry, {
+		plannerModel: options.services.settingsManager.getEffectivePlannerModel() ?? "",
+	});
 	const subAgentIpcTools = createSubAgentIpcToolDefinitionsFromEnv();
 	const allCustomTools: ToolDefinition<any, any>[] = [
 		plannerTool,
