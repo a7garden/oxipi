@@ -26,6 +26,7 @@ import {
 	type Model,
 	streamSimple,
 } from "@oxipi/ai";
+import { spawn } from "child_process";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
@@ -78,6 +79,23 @@ export interface SubAgentResult {
 	output?: string;
 	error?: string;
 	duration: number;
+	worktree?: string;
+	branch?: string;
+}
+
+export interface WorktreeInfo {
+	path: string;
+	branch: string;
+	head: string;
+}
+
+export interface SpawnOptions {
+	model?: string;
+	provider?: string;
+	cwd?: string;
+	timeout?: number;
+	onStdout?: (line: string) => void;
+	onStderr?: (line: string) => void;
 }
 
 export type ProgressCallback = (event: AdvisorEvent) => void;
@@ -394,16 +412,95 @@ export class AdvisorOrchestrator {
 }
 
 // =============================================================================
+// =============================================================================
+// WorktreeManager — git worktree lifecycle
+// =============================================================================
+
+export class WorktreeManager {
+	private repoPath: string;
+
+	constructor(repoPath: string) {
+		this.repoPath = repoPath;
+	}
+
+	/** Create a new worktree with a dedicated branch */
+	async create(branchName: string, baseBranch: string = "main"): Promise<WorktreeInfo> {
+		const { execSync } = await import("child_process");
+		const worktreesDir = join(this.repoPath, ".worktrees");
+		const worktreePath = join(worktreesDir, branchName);
+
+		// Ensure .worktrees directory exists
+		execSync(`mkdir -p "${worktreesDir}"`, { cwd: this.repoPath });
+
+		try {
+			execSync(`git worktree add -b "${branchName}" "${worktreePath}" "${baseBranch}"`, {
+				cwd: this.repoPath,
+				stdio: "pipe",
+			});
+		} catch (e: any) {
+			// Worktree might already exist — try to find it
+			const output = execSync(`git worktree list --porcelain`, { cwd: this.repoPath, encoding: "utf-8" });
+			const lines = output.split("\n");
+			let current: WorktreeInfo | null = null;
+			for (const line of lines) {
+				if (line.startsWith("worktree ")) current = { path: line.slice(8).trim(), branch: "", head: "" };
+				else if (line.startsWith("branch refs/heads/") && current) current.branch = line.slice(17).trim();
+				else if (line.startsWith("HEAD ") && current) current.head = line.slice(5).trim();
+				else if (line === "" && current && current.path === worktreePath) return current;
+			}
+			throw e;
+		}
+
+		return { path: worktreePath, branch: branchName, head: "" };
+	}
+
+	/** Remove a worktree */
+	async remove(worktreePath: string, force: boolean = false): Promise<void> {
+		const { execSync } = await import("child_process");
+		execSync(`git worktree remove "${worktreePath}"${force ? " --force" : ""}`, {
+			cwd: this.repoPath,
+			stdio: "pipe",
+		});
+	}
+
+	/** List all worktrees */
+	async list(): Promise<WorktreeInfo[]> {
+		const { execSync } = await import("child_process");
+		const output = execSync(`git worktree list --porcelain`, { cwd: this.repoPath, encoding: "utf-8" });
+		const worktrees: WorktreeInfo[] = [];
+		const lines = output.split("\n");
+		let current: WorktreeInfo | null = null;
+		for (const line of lines) {
+			if (line.startsWith("worktree ")) {
+				if (current) worktrees.push(current);
+				current = { path: line.slice(8).trim(), branch: "", head: "" };
+			} else if (line.startsWith("branch refs/heads/") && current) {
+				current.branch = line.slice(17).trim();
+			} else if (line.startsWith("HEAD ") && current) {
+				current.head = line.slice(5).trim();
+			} else if (line === "" && current) {
+				worktrees.push(current);
+				current = null;
+			}
+		}
+		if (current) worktrees.push(current);
+		return worktrees;
+	}
+}
+
+// =============================================================================
 // SubAgent Spawner
 // =============================================================================
 
 export class SubAgentSpawner {
 	private registry: ModelRegistry;
 	private router: ModelRouter;
+	private worktreeManager: WorktreeManager | null = null;
 
-	constructor(registry: ModelRegistry, router: ModelRouter) {
+	constructor(registry: ModelRegistry, router: ModelRouter, repoPath?: string) {
 		this.registry = registry;
 		this.router = router;
+		if (repoPath) this.worktreeManager = new WorktreeManager(repoPath);
 	}
 
 	async spawn(
@@ -438,6 +535,182 @@ export class SubAgentSpawner {
 		return map;
 	}
 
+	/**
+	 * Spawn a sub-agent in a separate git worktree with its own oxipi process.
+	 * Full isolation: separate git branch, file system, and process.
+	 */
+	async spawnInWorktree(
+		id: string,
+		task: string,
+		taskType: string = "default",
+		opts: SpawnOptions = {},
+	): Promise<SubAgentResult> {
+		const start = Date.now();
+		const wm = opts.cwd ? new WorktreeManager(opts.cwd) : this.worktreeManager;
+		const routing = this.router.getRouting(taskType);
+		const model = opts.model || routing.worker.model;
+		const branchName = `oxipi-${id}-${Date.now()}`;
+		let worktreePath: string | null = null;
+
+		if (!wm) return { id, status: "failed", error: "No worktree manager", duration: 0 };
+
+		const cleanup = async () => {
+			if (worktreePath) {
+				try {
+					await wm!.remove(worktreePath, true);
+				} catch {}
+			}
+		};
+
+		try {
+			const info = await wm.create(branchName, "main");
+			worktreePath = info.path;
+
+			const output = await this.runProcess("oxipi", ["-p", "--no-session", "--model", model, task], {
+				cwd: worktreePath,
+				timeout: opts.timeout || 300000,
+				onStdout: opts.onStdout,
+				onStderr: opts.onStderr,
+			});
+
+			return {
+				id,
+				status: output.exitCode === 0 ? "completed" : "failed",
+				output: output.stdout,
+				error: output.exitCode !== 0 ? output.stderr : undefined,
+				duration: Date.now() - start,
+				worktree: worktreePath,
+				branch: branchName,
+			};
+		} catch (e: any) {
+			return {
+				id,
+				status: "failed",
+				error: e.message,
+				duration: Date.now() - start,
+				worktree: worktreePath || undefined,
+				branch: branchName,
+			};
+		} finally {
+			await cleanup();
+		}
+	}
+
+	/** Spawn multiple agents in parallel, each in its own worktree */
+	async spawnParallelInWorktrees(
+		tasks: SubAgentTask[],
+		opts: SpawnOptions = {},
+		onProgress?: (id: string, line: string) => void,
+	): Promise<Map<string, SubAgentResult>> {
+		const wm = opts.cwd ? new WorktreeManager(opts.cwd) : this.worktreeManager!;
+		const branches = new Map<string, WorktreeInfo>();
+
+		// Pre-create all worktrees
+		for (const task of tasks) {
+			const branchName = `oxipi-${task.id}`;
+			try {
+				const info = await wm.create(branchName, "main");
+				branches.set(task.id, info);
+			} catch (e: any) {
+				onProgress?.(task.id, `[worktree error] ${e.message}`);
+			}
+		}
+
+		// Spawn all in parallel
+		const spawns = tasks.map(async (task) => {
+			const branch = branches.get(task.id);
+			const routing = this.router.getRouting(task.type);
+			const model = opts.model || routing.worker.model;
+			const start = Date.now();
+			let output = "";
+			let errOut = "";
+
+			try {
+				const result = await this.runProcess("oxipi", ["-p", "--no-session", "--model", model, task.task], {
+					cwd: branch?.path || opts.cwd || ".",
+					timeout: opts.timeout || 300000,
+					onStdout: (line) => {
+						output += `${line}\n`;
+						onProgress?.(task.id, line);
+					},
+					onStderr: (line) => {
+						errOut += `${line}\n`;
+					},
+				});
+				return {
+					id: task.id,
+					status: result.exitCode === 0 ? ("completed" as const) : ("failed" as const),
+					output,
+					error: result.exitCode !== 0 ? errOut : undefined,
+					duration: Date.now() - start,
+					worktree: branch?.path,
+					branch: branch?.branch,
+				};
+			} catch (e: any) {
+				return {
+					id: task.id,
+					status: "failed" as const,
+					error: e.message,
+					duration: Date.now() - start,
+					worktree: branch?.path,
+					branch: branch?.branch,
+				};
+			}
+		});
+
+		const results = await Promise.all(spawns);
+
+		// Cleanup all worktrees
+		await Promise.allSettled(Array.from(branches.values()).map((b) => wm.remove(b.path, true)));
+
+		const map = new Map<string, SubAgentResult>();
+		for (const r of results) map.set(r.id, r);
+		return map;
+	}
+
+	private runProcess(
+		cmd: string,
+		args: string[],
+		opts: { cwd?: string; timeout?: number; onStdout?: (line: string) => void; onStderr?: (line: string) => void },
+	): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+		return new Promise((resolve) => {
+			let stdout = "";
+			let stderr = "";
+			let killed = false;
+
+			const proc = spawn(cmd, args, {
+				cwd: opts.cwd || process.cwd(),
+				env: { ...process.env, FORCE_COLOR: "0" },
+				shell: false,
+			});
+
+			const timer = setTimeout(() => {
+				killed = true;
+				proc.kill("SIGTERM");
+			}, opts.timeout || 300000);
+
+			proc.stdout?.on("data", (data: Buffer) => {
+				const line = data.toString();
+				stdout += line;
+				opts.onStdout?.(line.trim());
+			});
+			proc.stderr?.on("data", (data: Buffer) => {
+				const line = data.toString();
+				stderr += line;
+				opts.onStderr?.(line.trim());
+			});
+			proc.on("close", (code) => {
+				clearTimeout(timer);
+				if (killed) stderr += "\n[timeout]";
+				resolve({ stdout, stderr, exitCode: code ?? (killed ? -1 : 0) });
+			});
+			proc.on("error", (_e) => {
+				clearTimeout(timer);
+				resolve({ stdout, stderr, exitCode: -1 });
+			});
+		});
+	}
+
 	async mergeResults(results: Map<string, SubAgentResult>): Promise<string> {
 		const parts: string[] = [];
 		let ok = 0;
@@ -446,13 +719,13 @@ export class SubAgentSpawner {
 		for (const [id, r] of results) {
 			if (r.status === "completed" && r.output) {
 				ok++;
-				parts.push(`## OK: ${id}\n${r.output}`);
+				parts.push(`## OK: ${id}${r.worktree ? ` [${r.branch}]` : ""}\n${r.output}`);
 			} else {
 				fail++;
-				parts.push(`## FAIL: ${id}\n${r.error || "Unknown error"}`);
+				parts.push(`## FAIL: ${id}${r.worktree ? ` [${r.branch}]` : ""}\n${r.error || "Unknown error"}`);
 			}
 		}
-		return `# Merged Results\nCompleted: ${ok}, Failed: ${fail}\n\n${parts.join("\n\n---\n\n")}`;
+		return `# Merged Results — ${ok} OK, ${fail} Failed\n\n${parts.join("\n\n---\n\n")}`;
 	}
 }
 
@@ -477,6 +750,10 @@ export class WorkTree {
 		this.results = await this.spawner.spawnParallel(Array.from(this.branches.values()), onProgress);
 	}
 
+	async executeInWorktrees(opts: SpawnOptions = {}, onProgress?: (id: string, line: string) => void): Promise<void> {
+		this.results = await this.spawner.spawnParallelInWorktrees(Array.from(this.branches.values()), opts, onProgress);
+	}
+
 	getResult(id: string): SubAgentResult | undefined {
 		return this.results.get(id);
 	}
@@ -492,10 +769,10 @@ export class WorkTree {
 // Factory
 // =============================================================================
 
-export function createAdvisorSystem(registry: ModelRegistry, configPath?: string) {
+export function createAdvisorSystem(registry: ModelRegistry, configPath?: string, repoPath?: string) {
 	const router = new ModelRouter(registry, configPath);
 	const orchestrator = new AdvisorOrchestrator(registry, router);
-	const spawner = new SubAgentSpawner(registry, router);
+	const spawner = new SubAgentSpawner(registry, router, repoPath);
 	return { router, orchestrator, spawner };
 }
 
