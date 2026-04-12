@@ -35,6 +35,8 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "resume", description: "Resume a different session" },
 	{ name: "reload", description: "Reload keybindings, extensions, skills, prompts, and themes" },
 	{ name: "advisor", description: "Run advisor/worker multi-agent system" },
+	{ name: "advisor-worktree", description: "Run a worktree-isolated sub-agent (MVP parent/sub-agent IPC)" },
+	{ name: "advisor-reply", description: "Reply to a pending sub-agent question" },
 	{ name: "advisor-config", description: "Show advisor routing configuration" },
 	{ name: "advisor-history", description: "Show advisor execution history" },
 	{ name: "advisor-abort", description: "Abort running advisor" },

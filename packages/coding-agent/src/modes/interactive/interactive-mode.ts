@@ -217,6 +217,18 @@ export class InteractiveMode {
 	// Track pending bash components (shown in pending area, moved to chat on submit)
 	private pendingBashComponents: BashExecutionComponent[] = [];
 
+	// Advisor sub-agent question/reply bridge (MVP)
+	private advisorPendingQuestions = new Map<
+		string,
+		{
+			subAgentId: string;
+			question: string;
+			context?: string;
+			resolve: (reply: string) => void;
+			timeout: NodeJS.Timeout;
+		}
+	>();
+
 	// Auto-compaction state
 	private autoCompactionLoader: Loader | undefined = undefined;
 	private autoCompactionEscapeHandler?: () => void;
@@ -2251,6 +2263,18 @@ export class InteractiveMode {
 			}
 			if (text === "/advisor-abort") {
 				await this.handleAdvisorAbortCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text.startsWith("/advisor-worktree ") || text === "/advisor-worktree") {
+				const task = text.startsWith("/advisor-worktree ") ? text.slice(18).trim() : undefined;
+				await this.handleAdvisorWorktreeCommand(task);
+				this.editor.setText("");
+				return;
+			}
+			if (text.startsWith("/advisor-reply ")) {
+				const payload = text.slice(14).trim();
+				await this.handleAdvisorReplyCommand(payload);
 				this.editor.setText("");
 				return;
 			}
@@ -4731,17 +4755,20 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private async handleAdvisorCommand(task?: string): Promise<void> {
-		if (!task) {
-			const entries = this.sessionManager.getEntries();
-			for (let i = entries.length - 1; i >= 0; i--) {
-				const entry = entries[i] as any;
-				if (entry.type === "message" && entry.role === "user" && entry.text) {
-					task = entry.text;
-					break;
-				}
+	private resolveAdvisorTask(task?: string): string | undefined {
+		if (task?.trim()) return task.trim();
+		const entries = this.sessionManager.getEntries();
+		for (let i = entries.length - 1; i >= 0; i--) {
+			const entry = entries[i] as any;
+			if (entry.type === "message" && entry.role === "user" && entry.text) {
+				return entry.text;
 			}
 		}
+		return undefined;
+	}
+
+	private async handleAdvisorCommand(task?: string): Promise<void> {
+		task = this.resolveAdvisorTask(task);
 		if (!task) {
 			this.showWarning("사용법: /advisor <태스크 설명>");
 			return;
@@ -4800,6 +4827,108 @@ export class InteractiveMode {
 		}
 		this.statusContainer.clear();
 		this.ui.requestRender();
+	}
+
+	private async handleAdvisorWorktreeCommand(task?: string): Promise<void> {
+		task = this.resolveAdvisorTask(task);
+		if (!task) {
+			this.showWarning("사용법: /advisor-worktree <태스크 설명>");
+			return;
+		}
+
+		const { createAdvisorSystem } = await import("../../core/advisor/index.js");
+		const registry = this.session.modelRegistry;
+		const { spawner } = createAdvisorSystem(registry, undefined, process.cwd());
+
+		const progress = new AdvisorProgressComponent();
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.chatContainer.addChild(progress);
+		this.chatContainer.addChild(new DynamicBorder());
+		this.statusContainer.clear();
+		this.statusContainer.addChild(
+			new Text("Advisor worktree sub-agent running... (질문이 오면 /advisor-reply 사용)", 1),
+		);
+		this.ui.requestRender();
+
+		progress.setExecutorRunning("sub-agent/worktree", 1);
+		const result = await spawner.spawnInWorktree("sub1", task, "default", {
+			cwd: process.cwd(),
+			onStdout: (line) => {
+				if (line) progress.updateWorkerStream(line);
+				this.ui.requestRender();
+			},
+			onStderr: (line) => {
+				if (line) progress.setWorkerTool(`stderr: ${line.substring(0, 120)}`);
+				this.ui.requestRender();
+			},
+			onQuestion: async (q) => {
+				progress.setWorkerTool(`question from ${q.subAgentId}: ${q.question.substring(0, 90)}`);
+				this.showWarning(
+					`Sub-agent question (${q.correlationId}): ${q.question}${q.context ? `\ncontext: ${q.context}` : ""}\n답변: /advisor-reply ${q.correlationId} <text>`,
+				);
+				this.ui.requestRender();
+				return this.waitForAdvisorReply(q.correlationId, q.subAgentId, q.question, q.context);
+			},
+		});
+
+		if (result.status === "completed") {
+			progress.setCompleted(result.output || "completed");
+		} else {
+			progress.setError(result.error || "worktree sub-agent failed");
+		}
+		this.statusContainer.clear();
+		this.ui.requestRender();
+	}
+
+	private waitForAdvisorReply(
+		correlationId: string,
+		subAgentId: string,
+		question: string,
+		context?: string,
+	): Promise<string> {
+		return new Promise((resolve) => {
+			const timeout = setTimeout(() => {
+				this.advisorPendingQuestions.delete(correlationId);
+				resolve("Proceed with best judgment and continue.");
+			}, 120000);
+
+			this.advisorPendingQuestions.set(correlationId, {
+				subAgentId,
+				question,
+				context,
+				resolve: (reply: string) => {
+					clearTimeout(timeout);
+					resolve(reply);
+				},
+				timeout,
+			});
+		});
+	}
+
+	private async handleAdvisorReplyCommand(payload: string): Promise<void> {
+		const [correlationId, ...rest] = payload.split(" ");
+		const reply = rest.join(" ").trim();
+		if (!correlationId || !reply) {
+			const pending = Array.from(this.advisorPendingQuestions.entries()).map(([id, q]) => `- ${id}: ${q.question}`);
+			this.showWarning(
+				pending.length > 0
+					? `사용법: /advisor-reply <correlationId> <reply>\nPending:\n${pending.join("\n")}`
+					: "사용법: /advisor-reply <correlationId> <reply> (현재 대기 질문 없음)",
+			);
+			return;
+		}
+
+		const pending = this.advisorPendingQuestions.get(correlationId);
+		if (!pending) {
+			this.showWarning(`No pending question for correlationId=${correlationId}`);
+			return;
+		}
+
+		this.advisorPendingQuestions.delete(correlationId);
+		clearTimeout(pending.timeout);
+		pending.resolve(reply);
+		this.showStatus(`Sent advisor reply to ${pending.subAgentId} (${correlationId})`);
 	}
 
 	private async handleAdvisorConfigCommand(): Promise<void> {
