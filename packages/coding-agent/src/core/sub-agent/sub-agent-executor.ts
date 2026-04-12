@@ -29,6 +29,16 @@ import { SubAgentIpcBus, type SubAgentIpcMessage } from "./subagent-ipc.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// Block nested sub-agents: sub-agents cannot spawn sub-agents
+const NESTING_GUARD = {
+	isNested: () => !!process.env.OXIPI_SUBAGENT_ID,
+	check: () => {
+		if (NESTING_GUARD.isNested()) {
+			throw new Error("Sub-agents cannot spawn sub-agents (nesting detected)");
+		}
+	},
+};
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -325,6 +335,8 @@ export class SubAgentExecutor {
 	}
 
 	async run(task: string, onProgress?: (event: SubAgentEvent) => void): Promise<SubAgentExecutorResult> {
+		NESTING_GUARD.check(); // Prevent nested sub-agent spawn
+
 		// Create planner tool with planner model
 		const plannerTool = createPlannerToolDefinition(this.reg, {
 			plannerModel: `${this.plannerModel.provider}/${this.plannerModel.id}`,
@@ -556,6 +568,8 @@ export class SubAgentSpawner {
 		onProgress?: (output: string) => void,
 	): Promise<SubAgentResult> {
 		const start = Date.now();
+		NESTING_GUARD.check(); // Prevent nested sub-agent spawn
+
 		const agent = new SubAgentExecutor(this.registry, this.router);
 
 		const result = await agent.run(task, (evt) => {
@@ -594,6 +608,8 @@ export class SubAgentSpawner {
 		opts: SpawnOptions = {},
 	): Promise<SubAgentResult> {
 		const start = Date.now();
+		NESTING_GUARD.check(); // Prevent nested sub-agent spawn
+
 		const wm = opts.cwd ? new WorktreeManager(opts.cwd) : this.worktreeManager;
 		const model = opts.model || this.router.getExecutorModel()?.id || "default";
 		const command = opts.command || "oxipi";
