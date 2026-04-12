@@ -6,6 +6,7 @@
 import type { Container, TUI } from "@oxipi/tui";
 import { Spacer, Text } from "@oxipi/tui";
 import type { AgentSession } from "../../core/agent-session.js";
+import type { ModelRegistry } from "../../core/model-registry.js";
 import type { SessionManager } from "../../core/session-manager.js";
 import type { SettingsManager } from "../../core/settings-manager.js";
 import { theme } from "./theme/theme.js";
@@ -14,6 +15,7 @@ export interface InteractiveModeCommandsDeps {
 	session: AgentSession;
 	sessionManager: SessionManager;
 	settingsManager: SettingsManager;
+	modelRegistry: ModelRegistry;
 	ui: TUI;
 	chatContainer: Container;
 	statusContainer: Container;
@@ -21,12 +23,14 @@ export interface InteractiveModeCommandsDeps {
 	showError: (message: string) => void;
 	showWarning: (message: string) => void;
 	updateTerminalTitle: () => void;
+	showSelector: (create: (done: () => void) => { component: any; focus: any }) => void;
 }
 
 export class InteractiveModeCommands {
 	private session: AgentSession;
 	private sessionManager: SessionManager;
 	private settingsManager: SettingsManager;
+	private modelRegistry: ModelRegistry;
 	private ui: TUI;
 	private chatContainer: Container;
 	private statusContainer: Container;
@@ -34,11 +38,13 @@ export class InteractiveModeCommands {
 	private showError: (message: string) => void;
 	private showWarning: (message: string) => void;
 	private updateTerminalTitle: () => void;
+	private showSelector: (create: (done: () => void) => { component: any; focus: any }) => void;
 
 	constructor(deps: InteractiveModeCommandsDeps) {
 		this.session = deps.session;
 		this.sessionManager = deps.sessionManager;
 		this.settingsManager = deps.settingsManager;
+		this.modelRegistry = deps.modelRegistry;
 		this.ui = deps.ui;
 		this.chatContainer = deps.chatContainer;
 		this.statusContainer = deps.statusContainer;
@@ -46,6 +52,7 @@ export class InteractiveModeCommands {
 		this.showError = deps.showError;
 		this.showWarning = deps.showWarning;
 		this.updateTerminalTitle = deps.updateTerminalTitle;
+		this.showSelector = deps.showSelector;
 	}
 
 	async handleExportCommand(text: string): Promise<void> {
@@ -135,15 +142,25 @@ export class InteractiveModeCommands {
 		}
 	}
 
-	private showPlannerSelector(): void {
-		// For now, show available models that could be used as planners
-		const currentPlanner = this.settingsManager.getPlannerModel();
-		this.chatContainer.addChild(new Spacer(1));
-		let info = `${theme.bold("Planner Model")}\n\n`;
-		info += `${theme.fg("dim", "Current:")} ${currentPlanner ?? "Not set"}\n\n`;
-		info += `${theme.fg("dim", "Usage:")} /planner <provider/model>\n`;
-		info += `${theme.fg("dim", "Example:")} /planner zai/glm-5.1`;
-		this.chatContainer.addChild(new Text(info, 1, 0));
-		this.ui.requestRender();
+	private async showPlannerSelector(initialSearchInput?: string): Promise<void> {
+		const { PlannerSelectorComponent } = await import("./components/planner-selector.js");
+
+		this.showSelector((done) => {
+			const selector = new PlannerSelectorComponent(
+				this.ui,
+				this.settingsManager.getPlannerModel(),
+				this.modelRegistry,
+				(modelId) => {
+					this.settingsManager.setPlannerModel(modelId);
+					this.showStatus(`Planner model: ${modelId}`);
+				},
+				() => {
+					done();
+					this.ui.requestRender();
+				},
+				initialSearchInput,
+			);
+			return { component: selector, focus: selector };
+		});
 	}
 }

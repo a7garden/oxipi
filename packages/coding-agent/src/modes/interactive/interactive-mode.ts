@@ -598,6 +598,7 @@ export class InteractiveMode {
 			session: this.session,
 			sessionManager: this.sessionManager,
 			settingsManager: this.settingsManager,
+			modelRegistry: this.session.modelRegistry,
 			ui: this.ui,
 			chatContainer: this.chatContainer,
 			statusContainer: this.statusContainer,
@@ -605,6 +606,7 @@ export class InteractiveMode {
 			showError: (message: string) => this.showError(message),
 			showWarning: (message: string) => this.showWarning(message),
 			updateTerminalTitle: () => this.updateTerminalTitle(),
+			showSelector: (create) => this.showSelector(create),
 		});
 	}
 
