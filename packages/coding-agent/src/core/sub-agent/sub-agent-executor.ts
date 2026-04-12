@@ -30,7 +30,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Block nested sub-agents: sub-agents cannot spawn sub-agents
-const NESTING_GUARD = {
+export const NESTING_GUARD = {
 	isNested: () => !!process.env.OXIPI_SUBAGENT_ID,
 	check: () => {
 		if (NESTING_GUARD.isNested()) {
