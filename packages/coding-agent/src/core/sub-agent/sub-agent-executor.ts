@@ -52,24 +52,24 @@ export class SessionMessages {
 
 	addUser(content: string) {
 		this.messages.push({
-			role: 'user',
-			content: [{ type: 'text', text: content }],
+			role: "user",
+			content: [{ type: "text", text: content }],
 			timestamp: Date.now(),
 		});
 	}
 
 	addAssistant(text: string) {
 		this.messages.push({
-			role: 'assistant',
-			content: [{ type: 'text', text }],
+			role: "assistant",
+			content: [{ type: "text", text }],
 			timestamp: Date.now(),
 		});
 	}
 
 	addToolResult(toolUseId: string, content: string) {
 		this.messages.push({
-			role: 'user',
-			content: [{ type: 'tool_result', tool_use_id: toolUseId, content }],
+			role: "user",
+			content: [{ type: "tool_result", tool_use_id: toolUseId, content }],
 			timestamp: Date.now(),
 		});
 	}
@@ -81,24 +81,24 @@ export class SessionMessages {
 	getLastAssistantText(): string {
 		for (let i = this.messages.length - 1; i >= 0; i--) {
 			const msg = this.messages[i];
-			if (msg.role === 'assistant') {
+			if (msg.role === "assistant") {
 				const assistant = msg as AssistantMessage;
 				for (const block of assistant.content) {
-					if (block.type === 'text' && block.text.trim()) {
+					if (block.type === "text" && block.text.trim()) {
 						return block.text;
 					}
 				}
 			}
 		}
-		return '';
+		return "";
 	}
 
 	hasToolCalls(): boolean {
 		for (const msg of this.messages) {
-			if (msg.role === 'assistant') {
+			if (msg.role === "assistant") {
 				const assistant = msg as AssistantMessage;
 				for (const block of assistant.content) {
-					if (block.type === 'tool_use') return true;
+					if (block.type === "tool_use") return true;
 				}
 			}
 		}
@@ -448,14 +448,30 @@ export class SubAgentExecutor {
 
 		// Message-based state (claw-code pattern)
 		const session = new SessionMessages();
-		session.addUser(`## Task\n${task}\n\nExecute this task step by step. Use the advisor tool when you need guidance on complex decisions.`);
+		session.addUser(
+			`## Task\n${task}\n\nExecute this task step by step. Use the advisor tool when you need guidance on complex decisions.`,
+		);
 
 		try {
 			await agent.prompt(session.getMessages());
 
-			// Collect output from assistant messages
-			const output = session.getLastAssistantText();
-			const hasToolCalls = session.hasToolCalls();
+			// Collect output from agent state after prompt() returns
+			const texts: string[] = [];
+			for (const msg of agent.state.messages as Message[]) {
+				if (msg.role === "assistant") {
+					for (const block of (msg as AssistantMessage).content) {
+						if (block.type === "text" && block.text.trim()) texts.push(block.text);
+					}
+				}
+			}
+			const output = texts.join("\n\n");
+
+			const hasToolCalls = (agent.state.messages as Message[]).some((msg) => {
+				if (msg.role === "assistant") {
+					return (msg as AssistantMessage).content.some((b) => b.type === "tool_use");
+				}
+				return false;
+			});
 
 			onProgress?.({ type: "executor_done", output });
 
