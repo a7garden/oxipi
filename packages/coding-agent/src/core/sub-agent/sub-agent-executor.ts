@@ -838,42 +838,6 @@ export class SubAgentSpawner {
 }
 
 // =============================================================================
-// WorkTree — parallel branches
-// =============================================================================
-
-export class WorkTree {
-	private branches: Map<string, SubAgentTask> = new Map();
-	private results: Map<string, SubAgentResult> = new Map();
-	private spawner: SubAgentSpawner;
-
-	constructor(spawner: SubAgentSpawner) {
-		this.spawner = spawner;
-	}
-
-	addBranch(id: string, task: string, type: string = "default"): void {
-		this.branches.set(id, { id, task, type });
-	}
-
-	async execute(onProgress?: (id: string, output: string) => void): Promise<void> {
-		this.results = await this.spawner.spawnParallel(Array.from(this.branches.values()), onProgress);
-	}
-
-	async executeInWorktrees(opts: SpawnOptions = {}, onProgress?: (id: string, line: string) => void): Promise<void> {
-		this.results = await this.spawner.spawnParallelInWorktrees(Array.from(this.branches.values()), opts, onProgress);
-	}
-
-	getResult(id: string): SubAgentResult | undefined {
-		return this.results.get(id);
-	}
-	getAllResults(): Map<string, SubAgentResult> {
-		return this.results;
-	}
-	async merge(): Promise<string> {
-		return this.spawner.mergeResults(this.results);
-	}
-}
-
-// =============================================================================
 // Factory
 // =============================================================================
 

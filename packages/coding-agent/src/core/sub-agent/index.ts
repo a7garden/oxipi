@@ -11,5 +11,4 @@ export {
 	ModelRouter,
 	SubAgentExecutor,
 	SubAgentSpawner,
-	WorkTree,
 } from "./sub-agent-executor.js";
