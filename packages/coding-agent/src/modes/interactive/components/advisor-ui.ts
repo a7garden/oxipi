@@ -122,6 +122,7 @@ export class AdvisorPendingQuestionsComponent extends Container {
 	private hint: Text;
 	private lines: Text[] = [];
 	private questions = new Map<string, { subAgentId: string; question: string }>();
+	private filterSubAgentId: string | undefined;
 
 	constructor() {
 		super();
@@ -141,14 +142,23 @@ export class AdvisorPendingQuestionsComponent extends Container {
 		this.renderQuestions();
 	}
 
+	setFilter(subAgentId?: string): void {
+		this.filterSubAgentId = subAgentId?.trim() || undefined;
+		this.renderQuestions();
+	}
+
 	private renderQuestions(): void {
 		for (const line of this.lines) {
 			this.removeChild(line);
 		}
 		this.lines = [];
-		this.title.setText(theme.fg("accent", `Sub-agent Questions (pending: ${this.questions.size})`));
+		const visible = Array.from(this.questions.entries()).filter(([, q]) =>
+			this.filterSubAgentId ? q.subAgentId === this.filterSubAgentId : true,
+		);
+		const filterLabel = this.filterSubAgentId ? `, filter: ${this.filterSubAgentId}` : "";
+		this.title.setText(theme.fg("accent", `Sub-agent Questions (pending: ${visible.length}${filterLabel})`));
 
-		for (const [id, q] of this.questions.entries()) {
+		for (const [id, q] of visible) {
 			const text = new Text(theme.fg("muted", `- ${id} [${q.subAgentId}] ${shorten(q.question, 120)}`), 1, 0);
 			this.lines.push(text);
 			this.addChild(text);

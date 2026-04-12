@@ -235,6 +235,9 @@ export class InteractiveMode {
 	>();
 	private advisorQuestionsComponent: AdvisorPendingQuestionsComponent | undefined;
 	private advisorReplyDialog: AdvisorReplyDialogComponent | undefined;
+	private advisorQuestionFilterSubAgentId: string | undefined;
+	private advisorHistory: string[] = [];
+	private advisorRunInProgress = false;
 
 	// Auto-compaction state
 	private autoCompactionLoader: Loader | undefined = undefined;
@@ -2279,6 +2282,18 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text.startsWith("/advisor-worktree-parallel ") || text === "/advisor-worktree-parallel") {
+				const task = text.startsWith("/advisor-worktree-parallel ") ? text.slice(27).trim() : undefined;
+				await this.handleAdvisorWorktreeParallelCommand(task);
+				this.editor.setText("");
+				return;
+			}
+			if (text.startsWith("/advisor-question-filter")) {
+				const arg = text.slice(24).trim();
+				await this.handleAdvisorQuestionFilterCommand(arg);
+				this.editor.setText("");
+				return;
+			}
 			if (text.startsWith("/advisor-reply ")) {
 				const payload = text.slice(14).trim();
 				await this.handleAdvisorReplyCommand(payload);
@@ -3402,7 +3417,7 @@ export class InteractiveMode {
 					transport: this.settingsManager.getTransport(),
 					thinkingLevel: this.session.thinkingLevel,
 					availableThinkingLevels: this.session.getAvailableThinkingLevels(),
-					currentTheme: this.settingsManager.getTheme() || "dark",
+					currentTheme: this.settingsManager.getTheme() || theme.name || "oxide",
 					availableThemes: getAvailableThemes(),
 					hideThinkingBlock: this.hideThinkingBlock,
 					collapseChangelog: this.settingsManager.getCollapseChangelog(),
@@ -3457,7 +3472,7 @@ export class InteractiveMode {
 						this.settingsManager.setTheme(themeName);
 						this.ui.invalidate();
 						if (!result.success) {
-							this.showError(`Failed to load theme "${themeName}": ${result.error}\nFell back to dark theme.`);
+							this.showError(`Failed to load theme "${themeName}": ${result.error}\nFell back to oxide theme.`);
 						}
 					},
 					onThemePreview: (themeName) => {
@@ -4161,7 +4176,7 @@ export class InteractiveMode {
 			const themeName = this.settingsManager.getTheme();
 			const themeResult = themeName ? setTheme(themeName, true) : { success: true };
 			if (!themeResult.success) {
-				this.showError(`Failed to load theme "${themeName}": ${themeResult.error}\nFell back to dark theme.`);
+				this.showError(`Failed to load theme "${themeName}": ${themeResult.error}\nFell back to oxide theme.`);
 			}
 			const editorPaddingX = this.settingsManager.getEditorPaddingX();
 			const autocompleteMaxVisible = this.settingsManager.getAutocompleteMaxVisible();
@@ -4774,12 +4789,26 @@ export class InteractiveMode {
 		return undefined;
 	}
 
+	private pushAdvisorHistory(line: string): void {
+		const timestamp = new Date().toISOString().replace("T", " ").replace(".000Z", "Z");
+		this.advisorHistory.push(`[${timestamp}] ${line}`);
+		if (this.advisorHistory.length > 100) {
+			this.advisorHistory = this.advisorHistory.slice(this.advisorHistory.length - 100);
+		}
+	}
+
 	private async handleAdvisorCommand(task?: string): Promise<void> {
+		if (this.advisorRunInProgress) {
+			this.showWarning("Advisor is already running");
+			return;
+		}
 		task = this.resolveAdvisorTask(task);
 		if (!task) {
 			this.showWarning("Usage: /advisor <task description>");
 			return;
 		}
+		this.advisorRunInProgress = true;
+		this.pushAdvisorHistory(`advisor run started: ${task.substring(0, 120)}`);
 
 		const { createAdvisorSystem } = await import("../../core/advisor/index.js");
 		const registry = this.session.modelRegistry;
@@ -4830,18 +4859,47 @@ export class InteractiveMode {
 		});
 
 		if (!result.success) {
+			this.pushAdvisorHistory(`advisor run failed: ${result.error || "unknown error"}`);
 			this.showWarning(`Advisor failed: ${result.error}`);
+		} else {
+			this.pushAdvisorHistory("advisor run completed");
 		}
 		this.statusContainer.clear();
+		this.advisorRunInProgress = false;
 		this.ui.requestRender();
 	}
 
+	private async handleIncomingSubAgentQuestion(
+		q: { subAgentId: string; correlationId: string; question: string; context?: string },
+		progress: AdvisorProgressComponent,
+	): Promise<string> {
+		this.pushAdvisorHistory(`question from ${q.subAgentId} (${q.correlationId})`);
+		progress.setWorkerTool(`question from ${q.subAgentId}: ${q.question.substring(0, 90)}`);
+		this.advisorQuestionsComponent?.upsertQuestion(q.correlationId, q.subAgentId, q.question);
+		if (this.advisorQuestionFilterSubAgentId) {
+			this.advisorQuestionsComponent?.setFilter(this.advisorQuestionFilterSubAgentId);
+		}
+		this.showWarning(
+			`Sub-agent question (${q.correlationId}): ${q.question}${q.context ? `\ncontext: ${q.context}` : ""}\nReply: /advisor-reply ${q.correlationId} <text>`,
+		);
+		this.editor.setText(`/advisor-reply ${q.correlationId} `);
+		this.ui.setFocus(this.editor);
+		this.ui.requestRender();
+		return this.waitForAdvisorReply(q.correlationId, q.subAgentId, q.question, q.context);
+	}
+
 	private async handleAdvisorWorktreeCommand(task?: string): Promise<void> {
+		if (this.advisorRunInProgress) {
+			this.showWarning("Advisor is already running");
+			return;
+		}
 		task = this.resolveAdvisorTask(task);
 		if (!task) {
 			this.showWarning("Usage: /advisor-worktree <task description>");
 			return;
 		}
+		this.advisorRunInProgress = true;
+		this.pushAdvisorHistory(`advisor worktree run started: ${task.substring(0, 120)}`);
 
 		const { createAdvisorSystem } = await import("../../core/advisor/index.js");
 		const registry = this.session.modelRegistry;
@@ -4850,6 +4908,9 @@ export class InteractiveMode {
 		const progress = new AdvisorProgressComponent();
 		const worktreeProgress = new WorkTreeProgressComponent(["sub1"]);
 		this.advisorQuestionsComponent = new AdvisorPendingQuestionsComponent();
+		if (this.advisorQuestionFilterSubAgentId) {
+			this.advisorQuestionsComponent.setFilter(this.advisorQuestionFilterSubAgentId);
+		}
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new DynamicBorder());
 		this.chatContainer.addChild(progress);
@@ -4874,31 +4935,121 @@ export class InteractiveMode {
 				if (line) progress.setWorkerTool(`stderr: ${line.substring(0, 120)}`);
 				this.ui.requestRender();
 			},
-			onQuestion: async (q) => {
-				progress.setWorkerTool(`question from ${q.subAgentId}: ${q.question.substring(0, 90)}`);
-				this.advisorQuestionsComponent?.upsertQuestion(q.correlationId, q.subAgentId, q.question);
-				this.showWarning(
-					`Sub-agent question (${q.correlationId}): ${q.question}${q.context ? `\ncontext: ${q.context}` : ""}\nReply: /advisor-reply ${q.correlationId} <text>`,
-				);
-				this.editor.setText(`/advisor-reply ${q.correlationId} `);
-				this.ui.setFocus(this.editor);
-				this.ui.requestRender();
-				return this.waitForAdvisorReply(q.correlationId, q.subAgentId, q.question, q.context);
-			},
+			onQuestion: async (q) => this.handleIncomingSubAgentQuestion(q, progress),
 		});
 
 		if (result.status === "completed") {
+			this.pushAdvisorHistory("advisor worktree run completed");
 			worktreeProgress.setBranchCompleted("sub1");
 			progress.setWorkerDone(1);
 			progress.setCompleted(result.output || "completed");
 		} else {
+			this.pushAdvisorHistory(`advisor worktree run failed: ${result.error || "unknown error"}`);
 			worktreeProgress.setBranchFailed("sub1", result.error || "worktree sub-agent failed");
 			progress.setError(result.error || "worktree sub-agent failed");
 		}
 		this.statusContainer.clear();
 		this.advisorQuestionsComponent = undefined;
 		this.closeAdvisorReplyDialog();
+		this.advisorRunInProgress = false;
 		this.ui.requestRender();
+	}
+
+	private async handleAdvisorWorktreeParallelCommand(task?: string): Promise<void> {
+		if (this.advisorRunInProgress) {
+			this.showWarning("Advisor is already running");
+			return;
+		}
+		task = this.resolveAdvisorTask(task);
+		if (!task) {
+			this.showWarning("Usage: /advisor-worktree-parallel <task description>");
+			return;
+		}
+		this.advisorRunInProgress = true;
+		this.pushAdvisorHistory(`advisor parallel worktree run started: ${task.substring(0, 120)}`);
+
+		const { createAdvisorSystem } = await import("../../core/advisor/index.js");
+		const registry = this.session.modelRegistry;
+		const { spawner } = createAdvisorSystem(registry, undefined, process.cwd());
+
+		const branchTasks = [
+			{ id: "sub-arch", task: `${task}\n\nFocus: architecture and key modules`, type: "reasoning" },
+			{
+				id: "sub-impl",
+				task: `${task}\n\nFocus: concrete implementation approach and file-level plan`,
+				type: "codeGeneration",
+			},
+			{ id: "sub-risk", task: `${task}\n\nFocus: edge cases, risks, and validation strategy`, type: "review" },
+		] as const;
+
+		const progress = new AdvisorProgressComponent();
+		const worktreeProgress = new WorkTreeProgressComponent(branchTasks.map((b) => b.id));
+		this.advisorQuestionsComponent = new AdvisorPendingQuestionsComponent();
+		if (this.advisorQuestionFilterSubAgentId) {
+			this.advisorQuestionsComponent.setFilter(this.advisorQuestionFilterSubAgentId);
+		}
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.chatContainer.addChild(progress);
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(worktreeProgress);
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(this.advisorQuestionsComponent);
+		this.chatContainer.addChild(new DynamicBorder());
+		this.statusContainer.clear();
+		this.statusContainer.addChild(new Text("Advisor parallel worktree sub-agents running", 1));
+		this.ui.requestRender();
+
+		progress.setExecutorRunning("sub-agent/worktree-parallel", 1);
+		for (const t of branchTasks) worktreeProgress.setBranchRunning(t.id);
+
+		const results = await Promise.all(
+			branchTasks.map((branch) =>
+				spawner.spawnInWorktree(branch.id, branch.task, branch.type, {
+					cwd: process.cwd(),
+					onStdout: (line) => {
+						if (line) progress.updateWorkerStream(`[${branch.id}] ${line}`);
+						this.ui.requestRender();
+					},
+					onStderr: (line) => {
+						if (line) progress.setWorkerTool(`${branch.id} stderr: ${line.substring(0, 100)}`);
+						this.ui.requestRender();
+					},
+					onQuestion: async (q) => this.handleIncomingSubAgentQuestion(q, progress),
+				}),
+			),
+		);
+
+		const resultMap = new Map<string, (typeof results)[number]>();
+		for (const result of results) {
+			resultMap.set(result.id, result);
+			if (result.status === "completed") worktreeProgress.setBranchCompleted(result.id);
+			else worktreeProgress.setBranchFailed(result.id, result.error || "failed");
+		}
+
+		const merged = await spawner.mergeResults(resultMap);
+		progress.setWorkerDone(1);
+		progress.setCompleted(merged);
+		this.pushAdvisorHistory("advisor parallel worktree run completed");
+
+		this.statusContainer.clear();
+		this.advisorQuestionsComponent = undefined;
+		this.closeAdvisorReplyDialog();
+		this.advisorRunInProgress = false;
+		this.ui.requestRender();
+	}
+
+	private async handleAdvisorQuestionFilterCommand(arg: string): Promise<void> {
+		const normalized = arg.trim();
+		if (!normalized || normalized.toLowerCase() === "all") {
+			this.advisorQuestionFilterSubAgentId = undefined;
+			this.advisorQuestionsComponent?.setFilter(undefined);
+			this.showStatus("Advisor question filter: all");
+			return;
+		}
+		this.advisorQuestionFilterSubAgentId = normalized;
+		this.advisorQuestionsComponent?.setFilter(normalized);
+		this.showStatus(`Advisor question filter: ${normalized}`);
 	}
 
 	private waitForAdvisorReply(
@@ -4977,6 +5128,7 @@ export class InteractiveMode {
 		this.advisorQuestionsComponent?.removeQuestion(correlationId);
 		clearTimeout(pending.timeout);
 		pending.resolve(reply);
+		this.pushAdvisorHistory(`reply sent to ${pending.subAgentId} (${correlationId})`);
 		this.showStatus(`Sent advisor reply to ${pending.subAgentId} (${correlationId})`);
 		return true;
 	}
@@ -5013,17 +5165,55 @@ export class InteractiveMode {
 		const routings = router.allRoutings();
 		const lines = routings.map(
 			(r) =>
-				`${r.type}: ${r.routing.advisor.provider}/${r.routing.advisor.model} -> ${r.routing.worker.provider}/${r.routing.worker.model} (max ${r.routing.maxIterations})`,
+				`- ${r.type}: ${r.routing.advisor.provider}/${r.routing.advisor.model} -> ${r.routing.worker.provider}/${r.routing.worker.model} (max ${r.routing.maxIterations})`,
 		);
-		this.showWarning(lines.join("\n"));
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Advisor Routing")), 1, 0));
+		this.chatContainer.addChild(new Text(theme.fg("muted", lines.join("\n")), 1, 0));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.ui.requestRender();
+	}
+
+	private releasePendingAdvisorQuestions(reason: string): number {
+		const pending = Array.from(this.advisorPendingQuestions.entries());
+		for (const [correlationId, entry] of pending) {
+			clearTimeout(entry.timeout);
+			entry.resolve(reason);
+			this.advisorPendingQuestions.delete(correlationId);
+			this.advisorQuestionsComponent?.removeQuestion(correlationId);
+		}
+		if (this.advisorReplyDialog) {
+			this.closeAdvisorReplyDialog();
+		}
+		return pending.length;
 	}
 
 	private async handleAdvisorHistoryCommand(): Promise<void> {
-		this.showWarning("Advisor history is not yet implemented.");
+		if (this.advisorHistory.length === 0) {
+			this.showStatus("No advisor history yet");
+			return;
+		}
+		const history = this.advisorHistory.slice(-20).join("\n");
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Advisor History")), 1, 0));
+		this.chatContainer.addChild(new Text(theme.fg("muted", history), 1, 0));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.ui.requestRender();
 	}
 
 	private async handleAdvisorAbortCommand(): Promise<void> {
-		this.showWarning("Advisor abort is not yet supported.");
+		const released = this.releasePendingAdvisorQuestions("Cancelled by parent. Continue with your best judgment.");
+		this.advisorRunInProgress = false;
+		this.statusContainer.clear();
+		if (released > 0) {
+			this.pushAdvisorHistory(`advisor abort: released ${released} pending question(s)`);
+			this.showStatus(`Aborted pending advisor questions: ${released}`);
+			return;
+		}
+		this.pushAdvisorHistory("advisor abort requested (no pending reply waits)");
+		this.showWarning("No pending advisor question to abort. Active backend run cannot be force-cancelled yet.");
 	}
 
 	private async handleCompactCommand(customInstructions?: string): Promise<void> {
