@@ -642,8 +642,10 @@ export class SubAgentSpawner {
 								timestamp: Date.now(),
 							});
 						}
-					} catch {
-						// Keep loop alive in MVP hardening mode.
+					} catch (err) {
+						// Log error but keep loop alive - IPC communication should not crash the process
+						const errorMessage = err instanceof Error ? err.message : String(err);
+						console.error(`[SubAgent IPC] Polling error: ${errorMessage}`);
 					}
 					if (!stopPolling) {
 						await new Promise((resolve) => setTimeout(resolve, pollMs));
