@@ -239,6 +239,7 @@ export class InteractiveMode {
 	private advisorParallelMinBranches = 3;
 	private advisorParallelMaxBranches = 5;
 	private advisorAutoDelegationEnabled = true;
+	private readonly advisorFooterBadgeKey = "advisor-auto";
 	private advisorHistory: string[] = [];
 	private advisorRunInProgress = false;
 
@@ -676,6 +677,8 @@ export class InteractiveMode {
 			}
 		}
 
+		this.refreshAdvisorAutoDelegationFooterBadge();
+
 		// Main interactive loop
 		while (true) {
 			const userInput = await this.getUserInput();
@@ -685,6 +688,10 @@ export class InteractiveMode {
 					? `AUTO-DELEGATE ✓ (${autoDecision.reason})`
 					: `AUTO-DELEGATE - (${autoDecision.reason})`;
 				this.showStatus(autoBadge);
+				this.setExtensionStatus(
+					this.advisorFooterBadgeKey,
+					`advisor:auto ${this.advisorAutoDelegationEnabled ? "on" : "off"} ${autoDecision.delegate ? "✓" : "-"} ${autoDecision.reason}`,
+				);
 				if (autoDecision.delegate) {
 					this.pushAdvisorHistory(`auto delegation selected (${autoDecision.reason})`);
 					await this.handleAdvisorWorktreeParallelCommand(userInput);
@@ -4856,6 +4863,13 @@ export class InteractiveMode {
 		return { delegate, reason: `score=${score}, type=${taskType}`, score, taskType };
 	}
 
+	private refreshAdvisorAutoDelegationFooterBadge(): void {
+		this.setExtensionStatus(
+			this.advisorFooterBadgeKey,
+			`advisor:auto ${this.advisorAutoDelegationEnabled ? "on" : "off"}`,
+		);
+	}
+
 	private pushAdvisorHistory(line: string): void {
 		const timestamp = new Date().toISOString().replace("T", " ").replace(".000Z", "Z");
 		this.advisorHistory.push(`[${timestamp}] ${line}`);
@@ -5138,16 +5152,19 @@ export class InteractiveMode {
 			this.showStatus(
 				`Advisor auto-delegation: ${this.advisorAutoDelegationEnabled ? "on" : "off"} (conditional scoring)`,
 			);
+			this.refreshAdvisorAutoDelegationFooterBadge();
 			return;
 		}
 		if (normalized === "on" || normalized === "enable" || normalized === "enabled") {
 			this.advisorAutoDelegationEnabled = true;
 			this.showStatus("Advisor auto-delegation enabled (conditional)");
+			this.refreshAdvisorAutoDelegationFooterBadge();
 			return;
 		}
 		if (normalized === "off" || normalized === "disable" || normalized === "disabled") {
 			this.advisorAutoDelegationEnabled = false;
 			this.showStatus("Advisor auto-delegation disabled");
+			this.refreshAdvisorAutoDelegationFooterBadge();
 			return;
 		}
 		this.showWarning("Usage: /advisor-auto-delegation [on|off|status]");
