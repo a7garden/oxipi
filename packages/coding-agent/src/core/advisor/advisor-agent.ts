@@ -33,6 +33,7 @@ import { fileURLToPath } from "url";
 import { convertToLlm } from "../messages.js";
 import type { ModelRegistry } from "../model-registry.js";
 import { codingTools, readOnlyTools } from "../tools/index.js";
+import { SubAgentIpcBus, type SubAgentIpcMessage } from "./subagent-ipc.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -96,6 +97,12 @@ export interface SpawnOptions {
 	timeout?: number;
 	onStdout?: (line: string) => void;
 	onStderr?: (line: string) => void;
+	onQuestion?: (question: {
+		subAgentId: string;
+		correlationId: string;
+		question: string;
+		context?: string;
+	}) => Promise<string> | string;
 }
 
 export type ProgressCallback = (event: AdvisorEvent) => void;
@@ -565,13 +572,52 @@ export class SubAgentSpawner {
 		try {
 			const info = await wm.create(branchName, "main");
 			worktreePath = info.path;
+			const ipcFile = join(worktreePath, ".oxipi", "subagent", `${id}.jsonl`);
+			const bus = new SubAgentIpcBus(ipcFile);
+			await bus.append({ type: "sub_ready", subAgentId: id, timestamp: Date.now() });
+
+			let offset = 0;
+			const questionLoop = setInterval(async () => {
+				const read = await bus.readSince(offset);
+				offset = read.nextOffset;
+				for (const msg of read.messages) {
+					if (msg.type !== "sub_question") continue;
+					const replyText =
+						(await opts.onQuestion?.({
+							subAgentId: msg.subAgentId,
+							correlationId: msg.correlationId,
+							question: msg.question,
+							context: msg.context,
+						})) ?? "Proceed with best judgment and continue.";
+					await bus.append({
+						type: "parent_reply",
+						subAgentId: msg.subAgentId,
+						correlationId: msg.correlationId,
+						reply: replyText,
+						timestamp: Date.now(),
+					});
+				}
+			}, 1000);
 
 			const output = await this.runProcess("oxipi", ["-p", "--no-session", "--model", model, task], {
 				cwd: worktreePath,
 				timeout: opts.timeout || 300000,
 				onStdout: opts.onStdout,
 				onStderr: opts.onStderr,
+				env: {
+					OXIPI_SUBAGENT_IPC_FILE: ipcFile,
+					OXIPI_SUBAGENT_ID: id,
+				},
 			});
+			clearInterval(questionLoop);
+			await bus.append({
+				type: output.exitCode === 0 ? "sub_done" : "sub_error",
+				subAgentId: id,
+				timestamp: Date.now(),
+				...(output.exitCode === 0
+					? { summary: "Sub-agent finished." }
+					: { error: output.stderr || "Sub-agent failed." }),
+			} as SubAgentIpcMessage);
 
 			return {
 				id,
@@ -671,7 +717,13 @@ export class SubAgentSpawner {
 	private runProcess(
 		cmd: string,
 		args: string[],
-		opts: { cwd?: string; timeout?: number; onStdout?: (line: string) => void; onStderr?: (line: string) => void },
+		opts: {
+			cwd?: string;
+			timeout?: number;
+			onStdout?: (line: string) => void;
+			onStderr?: (line: string) => void;
+			env?: Record<string, string>;
+		},
 	): Promise<{ stdout: string; stderr: string; exitCode: number }> {
 		return new Promise((resolve) => {
 			let stdout = "";
@@ -680,7 +732,7 @@ export class SubAgentSpawner {
 
 			const proc = spawn(cmd, args, {
 				cwd: opts.cwd || process.cwd(),
-				env: { ...process.env, FORCE_COLOR: "0" },
+				env: { ...process.env, FORCE_COLOR: "0", ...(opts.env ?? {}) },
 				shell: false,
 			});
 

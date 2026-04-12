@@ -64,6 +64,11 @@ export {
 	readToolDefinition,
 } from "./read.js";
 export {
+	createReceiveFromParentToolDefinition,
+	createSendReplyToParentToolDefinition,
+	createSubAgentIpcToolDefinitionsFromEnv,
+} from "./subagent-ipc.js";
+export {
 	DEFAULT_MAX_BYTES,
 	DEFAULT_MAX_LINES,
 	formatSize,

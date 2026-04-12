@@ -9,7 +9,7 @@ import { DefaultResourceLoader, type DefaultResourceLoaderOptions, type Resource
 import { type CreateAgentSessionResult, createAgentSession } from "./sdk.js";
 import type { SessionManager } from "./session-manager.js";
 import { SettingsManager } from "./settings-manager.js";
-import { createAdvisorToolDefinition, type Tool } from "./tools/index.js";
+import { createAdvisorToolDefinition, createSubAgentIpcToolDefinitionsFromEnv, type Tool } from "./tools/index.js";
 
 /**
  * Non-fatal issues collected while creating services or sessions.
@@ -180,7 +180,12 @@ export async function createAgentSessionFromServices(
 	options: CreateAgentSessionFromServicesOptions,
 ): Promise<CreateAgentSessionResult> {
 	const advisorTool = createAdvisorToolDefinition(options.services.modelRegistry);
-	const allCustomTools: ToolDefinition<any, any>[] = [advisorTool, ...(options.customTools ?? [])];
+	const subAgentIpcTools = createSubAgentIpcToolDefinitionsFromEnv();
+	const allCustomTools: ToolDefinition<any, any>[] = [
+		advisorTool,
+		...subAgentIpcTools,
+		...(options.customTools ?? []),
+	];
 	return createAgentSession({
 		cwd: options.services.cwd,
 		agentDir: options.services.agentDir,
