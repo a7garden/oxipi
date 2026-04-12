@@ -40,6 +40,77 @@ export const NESTING_GUARD = {
 };
 
 // =============================================================================
+// Message-based state (claw-code pattern)
+// =============================================================================
+
+export interface MessageState {
+	messages: Message[];
+}
+
+export class SessionMessages {
+	private messages: Message[] = [];
+
+	addUser(content: string) {
+		this.messages.push({
+			role: 'user',
+			content: [{ type: 'text', text: content }],
+			timestamp: Date.now(),
+		});
+	}
+
+	addAssistant(text: string) {
+		this.messages.push({
+			role: 'assistant',
+			content: [{ type: 'text', text }],
+			timestamp: Date.now(),
+		});
+	}
+
+	addToolResult(toolUseId: string, content: string) {
+		this.messages.push({
+			role: 'user',
+			content: [{ type: 'tool_result', tool_use_id: toolUseId, content }],
+			timestamp: Date.now(),
+		});
+	}
+
+	getMessages(): Message[] {
+		return [...this.messages]; // Return copy to prevent external mutation
+	}
+
+	getLastAssistantText(): string {
+		for (let i = this.messages.length - 1; i >= 0; i--) {
+			const msg = this.messages[i];
+			if (msg.role === 'assistant') {
+				const assistant = msg as AssistantMessage;
+				for (const block of assistant.content) {
+					if (block.type === 'text' && block.text.trim()) {
+						return block.text;
+					}
+				}
+			}
+		}
+		return '';
+	}
+
+	hasToolCalls(): boolean {
+		for (const msg of this.messages) {
+			if (msg.role === 'assistant') {
+				const assistant = msg as AssistantMessage;
+				for (const block of assistant.content) {
+					if (block.type === 'tool_use') return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	count(): number {
+		return this.messages.length;
+	}
+}
+
+// =============================================================================
 // Types
 // =============================================================================
 
@@ -335,14 +406,12 @@ export class SubAgentExecutor {
 	}
 
 	async run(task: string, onProgress?: (event: SubAgentEvent) => void): Promise<SubAgentExecutorResult> {
-		NESTING_GUARD.check(); // Prevent nested sub-agent spawn
+		NESTING_GUARD.check();
 
-		// Create planner tool with planner model
 		const plannerTool = createPlannerToolDefinition(this.reg, {
 			plannerModel: `${this.plannerModel.provider}/${this.plannerModel.id}`,
 		});
 
-		// Executor tools: coding tools + planner tool
 		const tools = [...createCodingTools(process.cwd()), plannerTool as unknown as AgentTool];
 
 		const agent = new Agent({
@@ -377,56 +446,23 @@ export class SubAgentExecutor {
 				})
 			: null;
 
-		let output = "";
-		let iteration = 0;
+		// Message-based state (claw-code pattern)
+		const session = new SessionMessages();
+		session.addUser(`## Task\n${task}\n\nExecute this task step by step. Use the advisor tool when you need guidance on complex decisions.`);
 
 		try {
-			for (iteration = 1; iteration <= this.maxIterations; iteration++) {
-				onProgress?.({ type: "executor_start", model: this.executorModel.id, iteration });
+			await agent.prompt(session.getMessages());
 
-				const prompt =
-					iteration === 1
-						? `## Task\n${task}\n\nExecute this task step by step. Use the advisor tool when you need guidance on complex decisions.`
-						: `## Task\n${task}\n\n## Previous Output\n${output}\n\nContinue any remaining work.`;
+			// Collect output from assistant messages
+			const output = session.getLastAssistantText();
+			const hasToolCalls = session.hasToolCalls();
 
-				const messages: AgentMessage[] = [
-					{
-						role: "user",
-						content: [{ type: "text", text: prompt }],
-						timestamp: Date.now(),
-					},
-				];
-
-				await agent.prompt(messages);
-
-				// Check if tool calls were made during this iteration
-				const hasToolCalls = (agent.state.messages as Message[]).some((msg) => {
-					if (msg.role !== "assistant") return false;
-					return (msg as AssistantMessage).content.some((block) => block.type === "toolCall");
-				});
-
-				// Collect output and count advisor calls
-				const texts: string[] = [];
-				for (const msg of agent.state.messages as Message[]) {
-					if (msg.role === "assistant") {
-						for (const block of (msg as AssistantMessage).content) {
-							if (block.type === "text" && block.text.trim()) texts.push(block.text);
-						}
-					}
-				}
-				output = texts.join("\n\n");
-
-				// Note: advisor tool calls are tracked internally by the advisor tool
-
-				onProgress?.({ type: "executor_done", output });
-
-				if (looksComplete(output, hasToolCalls)) break;
-			}
+			onProgress?.({ type: "executor_done", output });
 
 			const result: SubAgentExecutorResult = {
-				success: true,
+				success: looksComplete(output, hasToolCalls),
 				output,
-				iterations: iteration,
+				iterations: 1, // Single prompt cycle with message-based state
 				executorModel: this.executorModel.id,
 				plannerModel: this.plannerModel.id,
 			};
@@ -438,7 +474,7 @@ export class SubAgentExecutor {
 			return {
 				success: false,
 				error: err,
-				iterations: iteration,
+				iterations: session.count(),
 				executorModel: this.executorModel.id,
 				plannerModel: this.plannerModel.id,
 			};
