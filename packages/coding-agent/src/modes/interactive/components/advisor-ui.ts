@@ -66,7 +66,7 @@ export class AdvisorProgressComponent extends Container {
 	}
 
 	setAdvisorTool(tool: string): void {
-		this.advisorTools.setText(theme.fg("dim", `  tool: ${tool}`));
+		this.advisorTools.setText(theme.fg("dim", `  tool: ${shorten(tool, 96)}`));
 	}
 
 	setAdvisorDone(): void {
@@ -95,7 +95,7 @@ export class AdvisorProgressComponent extends Container {
 	}
 
 	setWorkerTool(tool: string): void {
-		this.workerTools.setText(theme.fg("dim", `  tool: ${tool}`));
+		this.workerTools.setText(theme.fg("dim", `  tool: ${shorten(tool, 96)}`));
 	}
 
 	setWorkerDone(iteration: number): void {

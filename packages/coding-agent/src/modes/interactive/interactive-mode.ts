@@ -4968,19 +4968,33 @@ export class InteractiveMode {
 		this.advisorRunInProgress = true;
 		this.pushAdvisorHistory(`advisor parallel worktree run started: ${task.substring(0, 120)}`);
 
-		const { createAdvisorSystem } = await import("../../core/advisor/index.js");
+		const { createAdvisorSystem, TaskClassifier } = await import("../../core/advisor/index.js");
 		const registry = this.session.modelRegistry;
 		const { spawner } = createAdvisorSystem(registry, undefined, process.cwd());
+		const classifier = new TaskClassifier(registry);
+		const primaryType = await classifier.classify(task);
 
-		const branchTasks = [
-			{ id: "sub-arch", task: `${task}\n\nFocus: architecture and key modules`, type: "reasoning" },
-			{
-				id: "sub-impl",
-				task: `${task}\n\nFocus: concrete implementation approach and file-level plan`,
-				type: "codeGeneration",
-			},
-			{ id: "sub-risk", task: `${task}\n\nFocus: edge cases, risks, and validation strategy`, type: "review" },
-		] as const;
+		const complexityHint =
+			task.length > 700 ||
+			/\b(and|also|plus|meanwhile|separately|in addition|migrate|refactor|test|docs)\b/i.test(task)
+				? 5
+				: task.length > 280
+					? 4
+					: 3;
+
+		const focusPool: Array<{ slug: string; focus: string; type: string }> = [
+			{ slug: "context", focus: "codebase context and relevant modules", type: "reasoning" },
+			{ slug: "impl", focus: "concrete implementation approach and file-level changes", type: "codeGeneration" },
+			{ slug: "risk", focus: "edge cases, risks, and validation strategy", type: "review" },
+			{ slug: "tests", focus: "test scenarios and regression prevention", type: "review" },
+			{ slug: "plan", focus: "execution ordering and dependency plan", type: primaryType || "default" },
+		];
+
+		const branchTasks = focusPool.slice(0, complexityHint).map((entry, idx) => ({
+			id: `sub-${idx + 1}-${entry.slug}`,
+			task: `${task}\n\nFocus: ${entry.focus}`,
+			type: entry.type,
+		}));
 
 		const progress = new AdvisorProgressComponent();
 		const worktreeProgress = new WorkTreeProgressComponent(branchTasks.map((b) => b.id));
