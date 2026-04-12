@@ -975,6 +975,40 @@ export class SettingsManager {
 		this.save();
 	}
 
+	/**
+	 * Set executor model at project level (overrides global setting)
+	 */
+	setExecutorModelForProject(model: string | undefined): void {
+		const projectSettings = structuredClone(this.projectSettings);
+		projectSettings.executorModel = model;
+		this.markProjectModified("executorModel");
+		this.saveProjectSettings(projectSettings);
+	}
+
+	/**
+	 * Set planner model at project level (overrides global setting)
+	 */
+	setPlannerModelForProject(model: string | undefined): void {
+		const projectSettings = structuredClone(this.projectSettings);
+		projectSettings.plannerModel = model;
+		this.markProjectModified("plannerModel");
+		this.saveProjectSettings(projectSettings);
+	}
+
+	/**
+	 * Get executor model considering project override
+	 */
+	getEffectiveExecutorModel(): string | undefined {
+		return this.projectSettings.executorModel ?? this.settings.executorModel;
+	}
+
+	/**
+	 * Get planner model considering project override
+	 */
+	getEffectivePlannerModel(): string | undefined {
+		return this.projectSettings.plannerModel ?? this.settings.plannerModel;
+	}
+
 	getCodeBlockIndent(): string {
 		return this.settings.markdown?.codeBlockIndent ?? "  ";
 	}
