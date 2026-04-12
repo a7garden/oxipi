@@ -71,7 +71,12 @@ import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
 import { parseGitUrl } from "../../utils/git.js";
 import { ensureTool } from "../../utils/tools-manager.js";
-import { AdvisorPendingQuestionsComponent, AdvisorProgressComponent } from "./components/advisor-ui.js";
+import { AdvisorReplyDialogComponent } from "./components/advisor-reply-dialog.js";
+import {
+	AdvisorPendingQuestionsComponent,
+	AdvisorProgressComponent,
+	WorkTreeProgressComponent,
+} from "./components/advisor-ui.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
@@ -229,6 +234,7 @@ export class InteractiveMode {
 		}
 	>();
 	private advisorQuestionsComponent: AdvisorPendingQuestionsComponent | undefined;
+	private advisorReplyDialog: AdvisorReplyDialogComponent | undefined;
 
 	// Auto-compaction state
 	private autoCompactionLoader: Loader | undefined = undefined;
@@ -4771,7 +4777,7 @@ export class InteractiveMode {
 	private async handleAdvisorCommand(task?: string): Promise<void> {
 		task = this.resolveAdvisorTask(task);
 		if (!task) {
-			this.showWarning("사용법: /advisor <태스크 설명>");
+			this.showWarning("Usage: /advisor <task description>");
 			return;
 		}
 
@@ -4786,7 +4792,7 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new DynamicBorder());
 
 		this.statusContainer.clear();
-		this.statusContainer.addChild(new Text("Advisor running... (Ctrl+C or /advisor-abort to cancel)", 1));
+		this.statusContainer.addChild(new Text("Advisor running (Ctrl+C or /advisor-abort to cancel)", 1));
 
 		const result = await orchestrator.run(task, undefined, (evt) => {
 			switch (evt.type) {
@@ -4833,7 +4839,7 @@ export class InteractiveMode {
 	private async handleAdvisorWorktreeCommand(task?: string): Promise<void> {
 		task = this.resolveAdvisorTask(task);
 		if (!task) {
-			this.showWarning("사용법: /advisor-worktree <태스크 설명>");
+			this.showWarning("Usage: /advisor-worktree <task description>");
 			return;
 		}
 
@@ -4842,19 +4848,21 @@ export class InteractiveMode {
 		const { spawner } = createAdvisorSystem(registry, undefined, process.cwd());
 
 		const progress = new AdvisorProgressComponent();
+		const worktreeProgress = new WorkTreeProgressComponent(["sub1"]);
 		this.advisorQuestionsComponent = new AdvisorPendingQuestionsComponent();
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new DynamicBorder());
 		this.chatContainer.addChild(progress);
 		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(worktreeProgress);
+		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(this.advisorQuestionsComponent);
 		this.chatContainer.addChild(new DynamicBorder());
 		this.statusContainer.clear();
-		this.statusContainer.addChild(
-			new Text("Advisor worktree sub-agent running... (질문이 오면 /advisor-reply 사용)", 1),
-		);
+		this.statusContainer.addChild(new Text("Advisor worktree sub-agent running (reply with /advisor-reply)", 1));
 		this.ui.requestRender();
 
+		worktreeProgress.setBranchRunning("sub1");
 		progress.setExecutorRunning("sub-agent/worktree", 1);
 		const result = await spawner.spawnInWorktree("sub1", task, "default", {
 			cwd: process.cwd(),
@@ -4870,7 +4878,7 @@ export class InteractiveMode {
 				progress.setWorkerTool(`question from ${q.subAgentId}: ${q.question.substring(0, 90)}`);
 				this.advisorQuestionsComponent?.upsertQuestion(q.correlationId, q.subAgentId, q.question);
 				this.showWarning(
-					`Sub-agent question (${q.correlationId}): ${q.question}${q.context ? `\ncontext: ${q.context}` : ""}\n답변: /advisor-reply ${q.correlationId} <text>`,
+					`Sub-agent question (${q.correlationId}): ${q.question}${q.context ? `\ncontext: ${q.context}` : ""}\nReply: /advisor-reply ${q.correlationId} <text>`,
 				);
 				this.editor.setText(`/advisor-reply ${q.correlationId} `);
 				this.ui.setFocus(this.editor);
@@ -4880,12 +4888,16 @@ export class InteractiveMode {
 		});
 
 		if (result.status === "completed") {
+			worktreeProgress.setBranchCompleted("sub1");
+			progress.setWorkerDone(1);
 			progress.setCompleted(result.output || "completed");
 		} else {
+			worktreeProgress.setBranchFailed("sub1", result.error || "worktree sub-agent failed");
 			progress.setError(result.error || "worktree sub-agent failed");
 		}
 		this.statusContainer.clear();
 		this.advisorQuestionsComponent = undefined;
+		this.closeAdvisorReplyDialog();
 		this.ui.requestRender();
 	}
 
@@ -4899,6 +4911,10 @@ export class InteractiveMode {
 			const timeout = setTimeout(() => {
 				this.advisorPendingQuestions.delete(correlationId);
 				this.advisorQuestionsComponent?.removeQuestion(correlationId);
+				if (this.advisorReplyDialog?.correlationId === correlationId) {
+					this.closeAdvisorReplyDialog();
+					this.openNextAdvisorReplyDialogIfAny();
+				}
 				resolve("Proceed with best judgment and continue.");
 			}, 120000);
 
@@ -4912,7 +4928,57 @@ export class InteractiveMode {
 				},
 				timeout,
 			});
+			this.openNextAdvisorReplyDialogIfAny();
 		});
+	}
+
+	private closeAdvisorReplyDialog(): void {
+		if (!this.advisorReplyDialog) return;
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.editor);
+		this.advisorReplyDialog = undefined;
+		this.ui.setFocus(this.editor);
+		this.ui.requestRender();
+	}
+
+	private openNextAdvisorReplyDialogIfAny(): void {
+		if (this.advisorReplyDialog) return;
+		const next = this.advisorPendingQuestions.entries().next();
+		if (next.done) return;
+		const [correlationId, pending] = next.value;
+		this.advisorReplyDialog = new AdvisorReplyDialogComponent(
+			this.ui,
+			correlationId,
+			pending.subAgentId,
+			pending.question,
+			pending.context,
+			(reply) => {
+				this.fulfillAdvisorReply(correlationId, reply);
+				this.closeAdvisorReplyDialog();
+				this.openNextAdvisorReplyDialogIfAny();
+			},
+			() => {
+				this.closeAdvisorReplyDialog();
+				this.editor.setText(`/advisor-reply ${correlationId} `);
+				this.ui.setFocus(this.editor);
+				this.ui.requestRender();
+			},
+		);
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.advisorReplyDialog);
+		this.ui.setFocus(this.advisorReplyDialog);
+		this.ui.requestRender();
+	}
+
+	private fulfillAdvisorReply(correlationId: string, reply: string): boolean {
+		const pending = this.advisorPendingQuestions.get(correlationId);
+		if (!pending) return false;
+		this.advisorPendingQuestions.delete(correlationId);
+		this.advisorQuestionsComponent?.removeQuestion(correlationId);
+		clearTimeout(pending.timeout);
+		pending.resolve(reply);
+		this.showStatus(`Sent advisor reply to ${pending.subAgentId} (${correlationId})`);
+		return true;
 	}
 
 	private async handleAdvisorReplyCommand(payload: string): Promise<void> {
@@ -4922,23 +4988,22 @@ export class InteractiveMode {
 			const pending = Array.from(this.advisorPendingQuestions.entries()).map(([id, q]) => `- ${id}: ${q.question}`);
 			this.showWarning(
 				pending.length > 0
-					? `사용법: /advisor-reply <correlationId> <reply>\nPending:\n${pending.join("\n")}`
-					: "사용법: /advisor-reply <correlationId> <reply> (현재 대기 질문 없음)",
+					? `Usage: /advisor-reply <correlationId> <reply>\nPending:\n${pending.join("\n")}`
+					: "Usage: /advisor-reply <correlationId> <reply> (no pending questions)",
 			);
 			return;
 		}
 
-		const pending = this.advisorPendingQuestions.get(correlationId);
-		if (!pending) {
+		const ok = this.fulfillAdvisorReply(correlationId, reply);
+		if (!ok) {
 			this.showWarning(`No pending question for correlationId=${correlationId}`);
 			return;
 		}
 
-		this.advisorPendingQuestions.delete(correlationId);
-		this.advisorQuestionsComponent?.removeQuestion(correlationId);
-		clearTimeout(pending.timeout);
-		pending.resolve(reply);
-		this.showStatus(`Sent advisor reply to ${pending.subAgentId} (${correlationId})`);
+		if (this.advisorReplyDialog?.correlationId === correlationId) {
+			this.closeAdvisorReplyDialog();
+			this.openNextAdvisorReplyDialogIfAny();
+		}
 	}
 
 	private async handleAdvisorConfigCommand(): Promise<void> {
@@ -4995,6 +5060,7 @@ export class InteractiveMode {
 			this.unsubscribe();
 		}
 		if (this.isInitialized) {
+			this.closeAdvisorReplyDialog();
 			this.ui.stop();
 			this.isInitialized = false;
 		}
