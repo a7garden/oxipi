@@ -66,6 +66,21 @@ export class InProcessPool implements SubtaskPool {
 		// Register external abort signal handler
 		if (signal) {
 			if (signal.aborted) {
+				// Emit cancelled progress events so callers can distinguish between
+				// "zero tasks spawned" and "all tasks were cancelled"
+				for (const task of tasks) {
+					onProgress?.({
+						type: "completed",
+						subtaskId: task.id,
+						result: {
+							id: task.id,
+							status: "cancelled",
+							failureReason: "cancelled",
+							duration: 0,
+							cleaned: true,
+						},
+					});
+				}
 				return results;
 			}
 			signal.addEventListener("abort", registeredAbortHandler);
