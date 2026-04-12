@@ -15,15 +15,7 @@ import {
 	type AgentEvent as CoreAgentEvent,
 	type ThinkingLevel,
 } from "@oxipi/agent-core";
-import {
-	type Api,
-	type AssistantMessage,
-	type Context,
-	completeSimple,
-	type Message,
-	type Model,
-	streamSimple,
-} from "@oxipi/ai";
+import { type Api, type AssistantMessage, type Message, type Model, streamSimple } from "@oxipi/ai";
 import { spawn } from "child_process";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
@@ -395,6 +387,12 @@ export class SubAgentExecutor {
 
 				await agent.prompt(messages);
 
+				// Check if tool calls were made during this iteration
+				const hasToolCalls = (agent.state.messages as Message[]).some((msg) => {
+					if (msg.role !== "assistant") return false;
+					return (msg as AssistantMessage).content.some((block) => block.type === "toolCall");
+				});
+
 				// Collect output and count advisor calls
 				const texts: string[] = [];
 				for (const msg of agent.state.messages as Message[]) {
@@ -410,7 +408,7 @@ export class SubAgentExecutor {
 
 				onProgress?.({ type: "executor_done", output });
 
-				if (looksComplete(output)) break;
+				if (looksComplete(output, hasToolCalls)) break;
 			}
 
 			const result: SubAgentExecutorResult = {
@@ -554,7 +552,7 @@ export class SubAgentSpawner {
 	async spawn(
 		id: string,
 		task: string,
-		taskType: string = "default",
+		_taskType: string = "default",
 		onProgress?: (output: string) => void,
 	): Promise<SubAgentResult> {
 		const start = Date.now();
@@ -592,7 +590,7 @@ export class SubAgentSpawner {
 	async spawnInWorktree(
 		id: string,
 		task: string,
-		taskType: string = "default",
+		_taskType: string = "default",
 		opts: SpawnOptions = {},
 	): Promise<SubAgentResult> {
 		const start = Date.now();
@@ -898,9 +896,41 @@ export function createSubAgentSystem(
 // Helpers
 // =============================================================================
 
-function looksComplete(output: string): boolean {
+function looksComplete(output: string, hasToolCalls: boolean = false): boolean {
+	// If the agent made tool calls but produced no output, it's not complete
+	if (hasToolCalls && !output.trim()) {
+		return false;
+	}
+
+	// Check for explicit completion markers
 	const lower = output.toLowerCase();
-	const positive = ["task completed", "done.", "finished", "all changes", "complete"];
-	const negative = ["not complete", "not done", "failed", "remaining"];
-	return positive.some((p) => lower.includes(p)) && !negative.some((n) => lower.includes(n));
+	const completionMarkers = [
+		"task completed",
+		"done.",
+		"finished",
+		"all changes applied",
+		"complete.",
+		"successfully completed",
+		"no further action needed",
+	];
+
+	// Check for failure markers
+	const failureMarkers = ["failed", "error", "could not complete", "not complete", "unable to"];
+
+	const hasCompletion = completionMarkers.some((m) => lower.includes(m));
+	const hasFailure = failureMarkers.some((m) => lower.includes(m));
+
+	// Only return true if we have completion markers and no failure markers
+	// AND the output has meaningful length (not just a one-liner)
+	if (hasCompletion && !hasFailure && output.length > 50) {
+		return true;
+	}
+
+	// Also consider short outputs with no tool calls as complete
+	// (simple tasks that don't need multiple iterations)
+	if (!hasToolCalls && output.length > 0 && output.length < 200 && !hasFailure) {
+		return true;
+	}
+
+	return false;
 }
