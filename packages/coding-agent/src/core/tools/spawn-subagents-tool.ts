@@ -50,21 +50,7 @@ export interface SpawnSubagentsResult {
 
 import type { AgentToolResult } from "@oxipi/agent-core";
 import type { ExtensionContext } from "../extensions/types.js";
-import type { ModelRegistry } from "../model-registry.js";
 import type { SubAgentSpawner } from "../sub-agent/sub-agent-executor.js";
-
-// Tool schema
-const spawnSubagentsToolSchema = Type.Object({
-	task: Type.String({ description: "The task to split and execute in parallel" }),
-	reasoning: Type.Optional(Type.String({ description: "Why parallelism is needed" })),
-	maxSubtasks: Type.Optional(Type.Number({ description: "Max subtasks (default: 4, max: 8)" })),
-	options: Type.Optional(
-		Type.Object({
-			failFast: Type.Boolean({ description: "Stop if any subtask fails" }),
-			timeoutMs: Type.Number({ description: "Per-subtask timeout in ms" }),
-		}),
-	),
-});
 
 interface Subtask {
 	id: string;
@@ -84,7 +70,6 @@ interface PlannerGuidance {
  * Called by executor when it judges a task needs parallel execution.
  */
 export function createSpawnSubagentsToolDefinition(
-	_registry: ModelRegistry,
 	spawner: SubAgentSpawner,
 	plannerTool: {
 		execute: (
@@ -103,7 +88,7 @@ export function createSpawnSubagentsToolDefinition(
 			"Split a complex task into parallel subtasks and execute them simultaneously. " +
 			"Use when a task can be broken into independent pieces that can run concurrently. " +
 			"The planner tool guides task decomposition. Returns merged results when all subtasks complete.",
-		parameters: spawnSubagentsToolSchema,
+		parameters: spawnSubagentsSchema,
 
 		async execute(
 			_toolCallId: string,
