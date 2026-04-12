@@ -681,12 +681,16 @@ export class InteractiveMode {
 			const userInput = await this.getUserInput();
 			try {
 				const autoDecision = await this.shouldAutoDelegateToSubAgents(userInput);
+				const autoBadge = autoDecision.delegate
+					? `AUTO-DELEGATE ✓ (${autoDecision.reason})`
+					: `AUTO-DELEGATE - (${autoDecision.reason})`;
+				this.showStatus(autoBadge);
 				if (autoDecision.delegate) {
 					this.pushAdvisorHistory(`auto delegation selected (${autoDecision.reason})`);
-					this.showStatus(`Auto-delegating to sub-agents (${autoDecision.reason})`);
 					await this.handleAdvisorWorktreeParallelCommand(userInput);
 					continue;
 				}
+				this.pushAdvisorHistory(`auto delegation skipped (${autoDecision.reason})`);
 				await this.session.prompt(userInput);
 			} catch (error: unknown) {
 				const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
@@ -2301,6 +2305,12 @@ export class InteractiveMode {
 			if (text.startsWith("/advisor-parallel-config")) {
 				const arg = text.slice(24).trim();
 				await this.handleAdvisorParallelConfigCommand(arg);
+				this.editor.setText("");
+				return;
+			}
+			if (text.startsWith("/advisor-auto-delegation")) {
+				const arg = text.slice(24).trim();
+				await this.handleAdvisorAutoDelegationCommand(arg);
 				this.editor.setText("");
 				return;
 			}
@@ -4803,13 +4813,18 @@ export class InteractiveMode {
 		return undefined;
 	}
 
-	private async shouldAutoDelegateToSubAgents(task: string): Promise<{ delegate: boolean; reason: string }> {
-		if (!this.advisorAutoDelegationEnabled) return { delegate: false, reason: "disabled" };
-		if (this.advisorRunInProgress) return { delegate: false, reason: "advisor already running" };
+	private async shouldAutoDelegateToSubAgents(
+		task: string,
+	): Promise<{ delegate: boolean; reason: string; score: number; taskType: string }> {
+		if (!this.advisorAutoDelegationEnabled)
+			return { delegate: false, reason: "disabled", score: 0, taskType: "default" };
+		if (this.advisorRunInProgress)
+			return { delegate: false, reason: "advisor already running", score: 0, taskType: "default" };
 
 		const normalized = task.trim();
-		if (!normalized) return { delegate: false, reason: "empty" };
-		if (normalized.startsWith("/") || normalized.startsWith("!")) return { delegate: false, reason: "command" };
+		if (!normalized) return { delegate: false, reason: "empty", score: 0, taskType: "default" };
+		if (normalized.startsWith("/") || normalized.startsWith("!"))
+			return { delegate: false, reason: "command", score: 0, taskType: "default" };
 
 		let score = 0;
 		if (normalized.length > 220) score += 2;
@@ -4838,7 +4853,7 @@ export class InteractiveMode {
 		if (taskType === "codeGeneration" && normalized.length > 180) score += 1;
 
 		const delegate = score >= 3;
-		return { delegate, reason: `score=${score}, type=${taskType}` };
+		return { delegate, reason: `score=${score}, type=${taskType}`, score, taskType };
 	}
 
 	private pushAdvisorHistory(line: string): void {
@@ -5115,6 +5130,27 @@ export class InteractiveMode {
 		this.advisorParallelMinBranches = min;
 		this.advisorParallelMaxBranches = max;
 		this.showStatus(`Advisor parallel config updated: min=${min}, max=${max}`);
+	}
+
+	private async handleAdvisorAutoDelegationCommand(arg: string): Promise<void> {
+		const normalized = arg.trim().toLowerCase();
+		if (!normalized || normalized === "status") {
+			this.showStatus(
+				`Advisor auto-delegation: ${this.advisorAutoDelegationEnabled ? "on" : "off"} (conditional scoring)`,
+			);
+			return;
+		}
+		if (normalized === "on" || normalized === "enable" || normalized === "enabled") {
+			this.advisorAutoDelegationEnabled = true;
+			this.showStatus("Advisor auto-delegation enabled (conditional)");
+			return;
+		}
+		if (normalized === "off" || normalized === "disable" || normalized === "disabled") {
+			this.advisorAutoDelegationEnabled = false;
+			this.showStatus("Advisor auto-delegation disabled");
+			return;
+		}
+		this.showWarning("Usage: /advisor-auto-delegation [on|off|status]");
 	}
 
 	private async handleAdvisorQuestionFilterCommand(arg: string): Promise<void> {
