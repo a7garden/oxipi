@@ -1,25 +1,18 @@
 export type {
 	AdvisorEvent,
 	AdvisorResult,
-	HistoryEntry,
 	ProgressCallback,
 	RoutingConfig,
 	SubAgentResult,
 	SubAgentTask,
 	TaskConfig,
 	TaskRouting,
-	TokenUsage,
 } from "./advisor-agent.js";
 export {
 	AdvisorOrchestrator,
 	createAdvisorSystem,
-	History,
 	ModelRouter,
-	PROMPT_TEMPLATES,
 	SubAgentSpawner,
 	TaskClassifier,
-	TaskSplitter,
-	UsageTracker,
 	WorkTree,
-	WorktreeManager,
 } from "./advisor-agent.js";

@@ -4784,10 +4784,9 @@ export class InteractiveMode {
 					progress.setWorkerTool(evt.tool);
 					break;
 				case "worker_done":
-					progress.setWorkerDone(evt.iteration);
 					break;
 				case "complete":
-					progress.setCompleted(evt.result.output || "done", evt.result.usage.total, evt.result.duration);
+					progress.setCompleted(evt.result.output || "done");
 					break;
 				case "error":
 					progress.setError(evt.error);

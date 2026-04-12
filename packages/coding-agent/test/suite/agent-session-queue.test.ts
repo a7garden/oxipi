@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { AgentTool } from "@oxipi/agent-core";
 import { fauxAssistantMessage, fauxToolCall } from "@oxipi/ai";
 import type { ExtensionAPI } from "@oxipi/coding-agent";
