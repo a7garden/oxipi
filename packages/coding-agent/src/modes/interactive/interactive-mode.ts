@@ -2238,7 +2238,22 @@ export class InteractiveMode {
 				return;
 			}
 
-			// Advisor command
+			// Advisor commands
+			if (text === "/advisor-config") {
+				await this.handleAdvisorConfigCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/advisor-history") {
+				await this.handleAdvisorHistoryCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/advisor-abort") {
+				await this.handleAdvisorAbortCommand();
+				this.editor.setText("");
+				return;
+			}
 			if (text.startsWith("/advisor ") || text === "/advisor") {
 				const task = text.startsWith("/advisor ") ? text.slice(9).trim() : undefined;
 				await this.handleAdvisorCommand(task);
@@ -3559,7 +3574,6 @@ export class InteractiveMode {
 			const selector = new ModelSelectorComponent(
 				this.ui,
 				this.session.model,
-				this.settingsManager,
 				this.session.modelRegistry,
 				this.session.scopedModels,
 				async (model) => {
@@ -4717,7 +4731,7 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-		private async handleAdvisorCommand(task?: string): Promise<void> {
+	private async handleAdvisorCommand(task?: string): Promise<void> {
 		if (!task) {
 			const entries = this.sessionManager.getEntries();
 			for (let i = entries.length - 1; i >= 0; i--) {
@@ -4729,14 +4743,13 @@ export class InteractiveMode {
 			}
 		}
 		if (!task) {
-			this.showWarning("Use /advisor <task>");
+			this.showWarning("사용법: /advisor <태스크 설명>");
 			return;
 		}
 
 		const { createAdvisorSystem } = await import("../../core/advisor/index.js");
 		const registry = this.session.modelRegistry;
-		const cwd = this.sessionManager.getCwd();
-		const { orchestrator } = createAdvisorSystem(registry, undefined, cwd);
+		const { orchestrator } = createAdvisorSystem(registry);
 
 		const progress = new AdvisorProgressComponent();
 		this.chatContainer.addChild(new Spacer(1));
@@ -4745,7 +4758,7 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new DynamicBorder());
 
 		this.statusContainer.clear();
-		this.statusContainer.addChild(new Text("Advisor running...", 1));
+		this.statusContainer.addChild(new Text("Advisor running... (Ctrl+C or /advisor-abort to cancel)", 1));
 
 		const result = await orchestrator.run(task, undefined, (evt) => {
 			switch (evt.type) {
@@ -4762,7 +4775,7 @@ export class InteractiveMode {
 					progress.setAdvisorDone();
 					break;
 				case "worker_start":
-					progress.setExecutorRunning(evt.model);
+					progress.setExecutorRunning(evt.model, evt.iteration);
 					break;
 				case "worker_text":
 					progress.updateWorkerStream(evt.text);
@@ -4770,8 +4783,11 @@ export class InteractiveMode {
 				case "worker_tool":
 					progress.setWorkerTool(evt.tool);
 					break;
+				case "worker_done":
+					progress.setWorkerDone(evt.iteration);
+					break;
 				case "complete":
-					progress.setCompleted(evt.result.output || "done");
+					progress.setCompleted(evt.result.output || "done", evt.result.usage.total, evt.result.duration);
 					break;
 				case "error":
 					progress.setError(evt.error);
@@ -4785,6 +4801,26 @@ export class InteractiveMode {
 		}
 		this.statusContainer.clear();
 		this.ui.requestRender();
+	}
+
+	private async handleAdvisorConfigCommand(): Promise<void> {
+		const { createAdvisorSystem } = await import("../../core/advisor/index.js");
+		const registry = this.session.modelRegistry;
+		const { router } = createAdvisorSystem(registry);
+		const routings = router.allRoutings();
+		const lines = routings.map(
+			(r) =>
+				`${r.type}: ${r.routing.advisor.provider}/${r.routing.advisor.model} -> ${r.routing.worker.provider}/${r.routing.worker.model} (max ${r.routing.maxIterations})`,
+		);
+		this.showWarning(lines.join("\n"));
+	}
+
+	private async handleAdvisorHistoryCommand(): Promise<void> {
+		this.showWarning("Advisor history is not yet implemented.");
+	}
+
+	private async handleAdvisorAbortCommand(): Promise<void> {
+		this.showWarning("Advisor abort is not yet supported.");
 	}
 
 	private async handleCompactCommand(customInstructions?: string): Promise<void> {

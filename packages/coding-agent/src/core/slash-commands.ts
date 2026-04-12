@@ -34,5 +34,9 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "compact", description: "Manually compact the session context" },
 	{ name: "resume", description: "Resume a different session" },
 	{ name: "reload", description: "Reload keybindings, extensions, skills, prompts, and themes" },
+	{ name: "advisor", description: "Run advisor/worker multi-agent system" },
+	{ name: "advisor-config", description: "Show advisor routing configuration" },
+	{ name: "advisor-history", description: "Show advisor execution history" },
+	{ name: "advisor-abort", description: "Abort running advisor" },
 	{ name: "quit", description: "Quit pi" },
 ];
