@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Type } from "@sinclair/typebox";
-import { SubAgentIpcBus } from "../advisor/subagent-ipc.js";
 import type { ToolDefinition } from "../extensions/types.js";
+import { SubAgentIpcBus } from "../sub-agent/subagent-ipc.js";
 
 const sendReplySchema = Type.Object({
 	question: Type.String({ description: "Question to ask parent agent" }),

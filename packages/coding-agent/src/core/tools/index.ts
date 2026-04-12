@@ -1,4 +1,3 @@
-export { createAdvisorToolDefinition } from "./advisor.js";
 export {
 	type BashOperations,
 	type BashSpawnContext,
@@ -53,6 +52,7 @@ export {
 	lsTool,
 	lsToolDefinition,
 } from "./ls.js";
+export { createPlannerToolDefinition } from "./planner-tool.js";
 export {
 	createReadTool,
 	createReadToolDefinition,

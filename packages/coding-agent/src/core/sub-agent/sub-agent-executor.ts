@@ -8,13 +8,7 @@
  *           Executor continues
  */
 
-import {
-	Agent,
-	type AgentMessage,
-	type AgentTool,
-	type AgentEvent as CoreAgentEvent,
-	type ThinkingLevel,
-} from "@oxipi/agent-core";
+import { Agent, type AgentTool, type ThinkingLevel } from "@oxipi/agent-core";
 import { type Api, type AssistantMessage, type Message, type Model, streamSimple } from "@oxipi/ai";
 import { spawn } from "child_process";
 import { existsSync, readFileSync, writeFileSync } from "fs";
@@ -55,7 +49,7 @@ export class SessionMessages {
 			role: "user",
 			content: [{ type: "text", text: content }],
 			timestamp: Date.now(),
-		});
+		} as Message);
 	}
 
 	addAssistant(text: string) {
@@ -63,15 +57,18 @@ export class SessionMessages {
 			role: "assistant",
 			content: [{ type: "text", text }],
 			timestamp: Date.now(),
-		});
+		} as Message);
 	}
 
 	addToolResult(toolUseId: string, content: string) {
 		this.messages.push({
-			role: "user",
-			content: [{ type: "tool_result", tool_use_id: toolUseId, content }],
+			role: "toolResult",
+			toolCallId: toolUseId,
+			toolName: "", // toolName not tracked in this context
+			content: [{ type: "text", text: content }],
+			isError: false,
 			timestamp: Date.now(),
-		});
+		} as Message);
 	}
 
 	getMessages(): Message[] {
@@ -98,7 +95,7 @@ export class SessionMessages {
 			if (msg.role === "assistant") {
 				const assistant = msg as AssistantMessage;
 				for (const block of assistant.content) {
-					if (block.type === "tool_use") return true;
+					if (block.type === "toolCall") return true;
 				}
 			}
 		}
@@ -280,75 +277,8 @@ export class ModelRouter {
 }
 
 // =============================================================================
-// Executor System Prompt
+// SubAgent Executor — SubAgent spawn and execution
 // =============================================================================
-
-// =============================================================================
-// ToolAgent — Agent with tools + streaming events
-// =============================================================================
-
-class ToolAgent {
-	private agent: Agent;
-
-	constructor(model: Model<Api>, registry: ModelRegistry, tools: AgentTool[], systemPrompt: string) {
-		this.agent = new Agent({
-			initialState: {
-				systemPrompt,
-				model,
-				thinkingLevel: model.reasoning ? ("medium" as ThinkingLevel) : ("off" as ThinkingLevel),
-				tools,
-			},
-			convertToLlm,
-			streamFn: async (m, context, options) => {
-				const auth = await registry.getApiKeyAndHeaders(m);
-				if (!auth.ok) throw new Error(auth.error);
-				return streamSimple(m, context, {
-					...options,
-					apiKey: auth.apiKey,
-					headers: auth.headers || options?.headers ? { ...auth.headers, ...options?.headers } : undefined,
-				});
-			},
-			sessionId: `oxipi-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-		});
-	}
-
-	async run(userMessage: string, onEvent?: (event: CoreAgentEvent) => void): Promise<string> {
-		const unsub = onEvent
-			? this.agent.subscribe((event) => {
-					if (
-						event.type === "message_update" ||
-						event.type === "tool_execution_start" ||
-						event.type === "tool_execution_end"
-					) {
-						onEvent(event);
-					}
-				})
-			: null;
-
-		try {
-			const messages: AgentMessage[] = [
-				{
-					role: "user",
-					content: [{ type: "text", text: userMessage }],
-					timestamp: Date.now(),
-				},
-			];
-			await this.agent.prompt(messages);
-
-			const texts: string[] = [];
-			for (const msg of this.agent.state.messages as Message[]) {
-				if (msg.role === "assistant") {
-					for (const block of (msg as AssistantMessage).content) {
-						if (block.type === "text" && block.text.trim()) texts.push(block.text);
-					}
-				}
-			}
-			return texts.join("\n\n");
-		} finally {
-			unsub?.();
-		}
-	}
-}
 
 export interface SubAgentExecutorConfig {
 	executorModel: Model<Api>;
@@ -468,7 +398,7 @@ export class SubAgentExecutor {
 
 			const hasToolCalls = (agent.state.messages as Message[]).some((msg) => {
 				if (msg.role === "assistant") {
-					return (msg as AssistantMessage).content.some((b) => b.type === "tool_use");
+					return (msg as AssistantMessage).content.some((b) => b.type === "toolCall");
 				}
 				return false;
 			});

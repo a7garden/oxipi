@@ -95,6 +95,8 @@ export interface Settings {
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
 	markdown?: MarkdownSettings;
 	sessionDir?: string; // Custom session storage directory (same format as --session-dir CLI flag)
+	executorModel?: string; // Executor model for sub-agent (e.g., "minimax/m2.7")
+	plannerModel?: string; // Planner model for sub-agent (e.g., "zai/glm-5.1")
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -950,6 +952,26 @@ export class SettingsManager {
 	setAutocompleteMaxVisible(maxVisible: number): void {
 		this.globalSettings.autocompleteMaxVisible = Math.max(3, Math.min(20, Math.floor(maxVisible)));
 		this.markModified("autocompleteMaxVisible");
+		this.save();
+	}
+
+	getExecutorModel(): string | undefined {
+		return this.settings.executorModel;
+	}
+
+	setExecutorModel(model: string | undefined): void {
+		this.globalSettings.executorModel = model;
+		this.markModified("executorModel");
+		this.save();
+	}
+
+	getPlannerModel(): string | undefined {
+		return this.settings.plannerModel;
+	}
+
+	setPlannerModel(model: string | undefined): void {
+		this.globalSettings.plannerModel = model;
+		this.markModified("plannerModel");
 		this.save();
 	}
 

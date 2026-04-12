@@ -40,7 +40,23 @@ describe("Message-based state", () => {
 		// Key insight: the entire session state is just the message array
 		const messages: Message[] = [
 			{ role: "user", content: [{ type: "text", text: "fix login" }], timestamp: 1000 } as Message,
-			{ role: "assistant", content: [{ type: "text", text: "I will fix" }], timestamp: 1001, api: "anthropic-messages", provider: "anthropic", model: "claude", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "stop" } as Message,
+			{
+				role: "assistant",
+				content: [{ type: "text", text: "I will fix" }],
+				timestamp: 1001,
+				api: "anthropic-messages",
+				provider: "anthropic",
+				model: "claude",
+				usage: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+				stopReason: "stop",
+			} as Message,
 		];
 
 		// State = message array (no separate iteration counter needed)

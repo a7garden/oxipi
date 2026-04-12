@@ -40,7 +40,7 @@ Local JSON state management
   - [ ] Model interface (model, port, gpu, pid)
   - [ ] GPU interface (id, name, memory)
 
-- [ ] `src/config/store.ts` - Read/write ~/.pi/pods.json
+- [ ] `src/config/store.ts` - Read/write ~/.oxipi/pods.json
   - [ ] Load config (handle missing file)
   - [ ] Save config (atomic write)
   - [ ] Get active pod

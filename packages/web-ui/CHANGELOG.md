@@ -32,7 +32,7 @@
 
 ### Added
 
-- Exported `CustomProviderDialog` from `@mariozechner/pi-web-ui` ([#2267](https://github.com/badlogic/pi-mono/issues/2267))
+- Exported `CustomProviderDialog` from `@mariozechner/pi-web-ui` ([#2267](https://github.com/badlogic/oxipi/issues/2267))
 
 ## [0.58.4] - 2026-03-16
 
@@ -105,7 +105,7 @@
 
 ### Fixed
 
-- Made model selector search case-insensitive by normalizing query tokens, fixing auto-capitalized mobile input filtering ([#1443](https://github.com/badlogic/pi-mono/issues/1443))
+- Made model selector search case-insensitive by normalizing query tokens, fixing auto-capitalized mobile input filtering ([#1443](https://github.com/badlogic/oxipi/issues/1443))
 
 ## [0.52.9] - 2026-02-08
 
@@ -157,7 +157,7 @@
 
 ### Added
 
-- Exported `CustomProviderCard`, `ProviderKeyInput`, `AbortedMessage`, and `ToolMessageDebugView` components for custom UIs ([#1015](https://github.com/badlogic/pi-mono/issues/1015))
+- Exported `CustomProviderCard`, `ProviderKeyInput`, `AbortedMessage`, and `ToolMessageDebugView` components for custom UIs ([#1015](https://github.com/badlogic/oxipi/issues/1015))
 
 ## [0.50.1] - 2026-01-26
 
@@ -167,7 +167,7 @@
 
 ### Changed
 
-- Updated tsgo to 7.0.0-dev.20260120.1 for decorator support ([#873](https://github.com/badlogic/pi-mono/issues/873))
+- Updated tsgo to 7.0.0-dev.20260120.1 for decorator support ([#873](https://github.com/badlogic/oxipi/issues/873))
 
 ## [0.49.2] - 2026-01-19
 

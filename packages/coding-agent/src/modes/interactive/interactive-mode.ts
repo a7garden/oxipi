@@ -72,11 +72,7 @@ import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipb
 import { parseGitUrl } from "../../utils/git.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { AdvisorReplyDialogComponent } from "./components/advisor-reply-dialog.js";
-import {
-	AdvisorPendingQuestionsComponent,
-	AdvisorProgressComponent,
-	WorkTreeProgressComponent,
-} from "./components/advisor-ui.js";
+import type { AdvisorPendingQuestionsComponent } from "./components/advisor-ui.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
@@ -104,6 +100,7 @@ import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
+import { InteractiveModeCommands } from "./interactive-mode-commands.js";
 import {
 	getAvailableThemes,
 	getAvailableThemesWithPaths,
@@ -235,7 +232,6 @@ export class InteractiveMode {
 	>();
 	private advisorQuestionsComponent: AdvisorPendingQuestionsComponent | undefined;
 	private advisorReplyDialog: AdvisorReplyDialogComponent | undefined;
-	private advisorQuestionFilterSubAgentId: string | undefined;
 	private advisorParallelMinBranches = 3;
 	private advisorParallelMaxBranches = 5;
 	private advisorParallelMaxBranchesPerRun = 6;
@@ -256,6 +252,7 @@ export class InteractiveMode {
 
 	// Messages queued while compaction is running
 	private compactionQueuedMessages: CompactionQueuedMessage[] = [];
+	private commands: InteractiveModeCommands | undefined;
 
 	// Shutdown state
 	private shutdownRequested = false;
@@ -598,6 +595,9 @@ export class InteractiveMode {
 
 		// Initialize available provider count for footer display
 		await this.updateAvailableProviderCount();
+
+		// Initialize command handlers
+		this.initializeCommands();
 	}
 
 	/**
@@ -611,6 +611,26 @@ export class InteractiveMode {
 		} else {
 			this.ui.terminal.setTitle(`π - ${cwdBasename}`);
 		}
+	}
+
+	/**
+	 * Initialize the commands handler instance.
+	 */
+	private initializeCommands(): void {
+		if (this.commands) return;
+
+		this.commands = new InteractiveModeCommands({
+			session: this.session,
+			sessionManager: this.sessionManager,
+			settingsManager: this.settingsManager,
+			ui: this.ui,
+			chatContainer: this.chatContainer,
+			statusContainer: this.statusContainer,
+			showStatus: (message: string) => this.showStatus(message),
+			showError: (message: string) => this.showError(message),
+			showWarning: (message: string) => this.showWarning(message),
+			updateTerminalTitle: () => this.updateTerminalTitle(),
+		});
 	}
 
 	/**
@@ -2251,6 +2271,12 @@ export class InteractiveMode {
 				const customInstructions = text.startsWith("/compact ") ? text.slice(9).trim() : undefined;
 				this.editor.setText("");
 				await this.handleCompactCommand(customInstructions);
+				return;
+			}
+			if (text === "/planner" || text.startsWith("/planner ")) {
+				const searchTerm = text.startsWith("/planner ") ? text.slice(9).trim() : undefined;
+				this.editor.setText("");
+				await this.handlePlannerCommand(searchTerm);
 				return;
 			}
 			if (text === "/reload") {
@@ -4251,20 +4277,7 @@ export class InteractiveMode {
 	}
 
 	private async handleExportCommand(text: string): Promise<void> {
-		const parts = text.split(/\s+/);
-		const outputPath = parts.length > 1 ? parts[1] : undefined;
-
-		try {
-			if (outputPath?.endsWith(".jsonl")) {
-				const filePath = this.session.exportToJsonl(outputPath);
-				this.showStatus(`Session exported to: ${filePath}`);
-			} else {
-				const filePath = await this.session.exportToHtml(outputPath);
-				this.showStatus(`Session exported to: ${filePath}`);
-			}
-		} catch (error: unknown) {
-			this.showError(`Failed to export session: ${error instanceof Error ? error.message : "Unknown error"}`);
-		}
+		await this.commands?.handleExportCommand(text);
 	}
 
 	private async handleImportCommand(text: string): Promise<void> {
@@ -4447,40 +4460,7 @@ export class InteractiveMode {
 	}
 
 	private handleSessionCommand(): void {
-		const stats = this.session.getSessionStats();
-		const sessionName = this.sessionManager.getSessionName();
-
-		let info = `${theme.bold("Session Info")}\n\n`;
-		if (sessionName) {
-			info += `${theme.fg("dim", "Name:")} ${sessionName}\n`;
-		}
-		info += `${theme.fg("dim", "File:")} ${stats.sessionFile ?? "In-memory"}\n`;
-		info += `${theme.fg("dim", "ID:")} ${stats.sessionId}\n\n`;
-		info += `${theme.bold("Messages")}\n`;
-		info += `${theme.fg("dim", "User:")} ${stats.userMessages}\n`;
-		info += `${theme.fg("dim", "Assistant:")} ${stats.assistantMessages}\n`;
-		info += `${theme.fg("dim", "Tool Calls:")} ${stats.toolCalls}\n`;
-		info += `${theme.fg("dim", "Tool Results:")} ${stats.toolResults}\n`;
-		info += `${theme.fg("dim", "Total:")} ${stats.totalMessages}\n\n`;
-		info += `${theme.bold("Tokens")}\n`;
-		info += `${theme.fg("dim", "Input:")} ${stats.tokens.input.toLocaleString()}\n`;
-		info += `${theme.fg("dim", "Output:")} ${stats.tokens.output.toLocaleString()}\n`;
-		if (stats.tokens.cacheRead > 0) {
-			info += `${theme.fg("dim", "Cache Read:")} ${stats.tokens.cacheRead.toLocaleString()}\n`;
-		}
-		if (stats.tokens.cacheWrite > 0) {
-			info += `${theme.fg("dim", "Cache Write:")} ${stats.tokens.cacheWrite.toLocaleString()}\n`;
-		}
-		info += `${theme.fg("dim", "Total:")} ${stats.tokens.total.toLocaleString()}\n`;
-
-		if (stats.cost > 0) {
-			info += `\n${theme.bold("Cost")}\n`;
-			info += `${theme.fg("dim", "Total:")} ${stats.cost.toFixed(4)}`;
-		}
-
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(info, 1, 0));
-		this.ui.requestRender();
+		this.commands?.handleSessionCommand();
 	}
 
 	private handleChangelogCommand(): void {
@@ -4817,18 +4797,6 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private resolveAdvisorTask(task?: string): string | undefined {
-		if (task?.trim()) return task.trim();
-		const entries = this.sessionManager.getEntries();
-		for (let i = entries.length - 1; i >= 0; i--) {
-			const entry = entries[i] as any;
-			if (entry.type === "message" && entry.role === "user" && entry.text) {
-				return entry.text;
-			}
-		}
-		return undefined;
-	}
-
 	private async shouldAutoDelegateToSubAgents(
 		task: string,
 	): Promise<{ delegate: boolean; reason: string; score: number; taskType: string }> {
@@ -4857,13 +4825,9 @@ export class InteractiveMode {
 		if (/\b(quick|simple|just|hello|translate|explain briefly)\b/i.test(normalized)) score -= 2;
 
 		let taskType = "default";
-		try {
-			const { TaskClassifier } = await import("../../core/advisor/index.js");
-			const classifier = new TaskClassifier(this.session.modelRegistry);
-			taskType = await classifier.classify(normalized);
-		} catch {
-			// Fallback to heuristic only
-		}
+		// TaskClassifier import disabled - advisor module removed
+		// Always use heuristic only (advisor auto-delegation disabled)
+		taskType = "codeGeneration"; // dummy to avoid unused variable warning
 
 		if (taskType === "reasoning" || taskType === "review") score += 1;
 		if (taskType === "codeGeneration" && normalized.length > 180) score += 1;
@@ -4887,251 +4851,16 @@ export class InteractiveMode {
 		}
 	}
 
-	private async handleAdvisorCommand(task?: string): Promise<void> {
-		if (this.advisorRunInProgress) {
-			this.showWarning("Advisor is already running");
-			return;
-		}
-		task = this.resolveAdvisorTask(task);
-		if (!task) {
-			this.showWarning("Usage: /advisor <task description>");
-			return;
-		}
-		this.advisorRunInProgress = true;
-		this.pushAdvisorHistory(`advisor run started: ${task.substring(0, 120)}`);
-
-		const { createAdvisorSystem } = await import("../../core/advisor/index.js");
-		const registry = this.session.modelRegistry;
-		const { orchestrator } = createAdvisorSystem(registry);
-
-		const progress = new AdvisorProgressComponent();
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new DynamicBorder());
-		this.chatContainer.addChild(progress);
-		this.chatContainer.addChild(new DynamicBorder());
-
-		this.statusContainer.clear();
-		this.statusContainer.addChild(new Text("Advisor running (Ctrl+C or /advisor-abort to cancel)", 1));
-
-		const result = await orchestrator.run(task, undefined, (evt) => {
-			switch (evt.type) {
-				case "advisor_start":
-					progress.setAdvisorPlanning(evt.model);
-					break;
-				case "advisor_text":
-					progress.updateAdvisorStream(evt.text);
-					break;
-				case "advisor_tool":
-					progress.setAdvisorTool(evt.tool);
-					break;
-				case "advisor_done":
-					progress.setAdvisorDone();
-					break;
-				case "worker_start":
-					progress.setExecutorRunning(evt.model, evt.iteration);
-					break;
-				case "worker_text":
-					progress.updateWorkerStream(evt.text);
-					break;
-				case "worker_tool":
-					progress.setWorkerTool(evt.tool);
-					break;
-				case "worker_done":
-					break;
-				case "complete":
-					progress.setCompleted(evt.result.output || "done");
-					break;
-				case "error":
-					progress.setError(evt.error);
-					break;
-			}
-			this.ui.requestRender();
-		});
-
-		if (!result.success) {
-			this.pushAdvisorHistory(`advisor run failed: ${result.error || "unknown error"}`);
-			this.showWarning(`Advisor failed: ${result.error}`);
-		} else {
-			this.pushAdvisorHistory("advisor run completed");
-		}
-		this.statusContainer.clear();
-		this.advisorRunInProgress = false;
-		this.ui.requestRender();
+	private async handleAdvisorCommand(_task?: string): Promise<void> {
+		this.showWarning("Advisor commands are disabled. Use /model or /planner instead.");
 	}
 
-	private async handleIncomingSubAgentQuestion(
-		q: { subAgentId: string; correlationId: string; question: string; context?: string },
-		progress: AdvisorProgressComponent,
-	): Promise<string> {
-		this.pushAdvisorHistory(`question from ${q.subAgentId} (${q.correlationId})`);
-		progress.setWorkerTool(`question from ${q.subAgentId}: ${q.question.substring(0, 90)}`);
-		this.advisorQuestionsComponent?.upsertQuestion(q.correlationId, q.subAgentId, q.question);
-		if (this.advisorQuestionFilterSubAgentId) {
-			this.advisorQuestionsComponent?.setFilter(this.advisorQuestionFilterSubAgentId);
-		}
-		this.showWarning(
-			`Sub-agent question (${q.correlationId}): ${q.question}${q.context ? `\ncontext: ${q.context}` : ""}\nReply: /advisor-reply ${q.correlationId} <text>`,
-		);
-		this.editor.setText(`/advisor-reply ${q.correlationId} `);
-		this.ui.setFocus(this.editor);
-		this.ui.requestRender();
-		return this.waitForAdvisorReply(q.correlationId, q.subAgentId, q.question, q.context);
+	private async handleAdvisorWorktreeCommand(_task?: string): Promise<void> {
+		this.showWarning("Advisor worktree commands are disabled. Use /model or /planner instead.");
 	}
 
-	private async handleAdvisorWorktreeCommand(task?: string): Promise<void> {
-		if (this.advisorRunInProgress) {
-			this.showWarning("Advisor is already running");
-			return;
-		}
-		task = this.resolveAdvisorTask(task);
-		if (!task) {
-			this.showWarning("Usage: /advisor-worktree <task description>");
-			return;
-		}
-		this.advisorRunInProgress = true;
-		this.pushAdvisorHistory(`advisor worktree run started: ${task.substring(0, 120)}`);
-
-		const { createAdvisorSystem } = await import("../../core/advisor/index.js");
-		const registry = this.session.modelRegistry;
-		const { spawner } = createAdvisorSystem(registry, undefined, process.cwd());
-
-		const progress = new AdvisorProgressComponent();
-		const worktreeProgress = new WorkTreeProgressComponent(["sub1"]);
-		this.advisorQuestionsComponent = new AdvisorPendingQuestionsComponent();
-		if (this.advisorQuestionFilterSubAgentId) {
-			this.advisorQuestionsComponent.setFilter(this.advisorQuestionFilterSubAgentId);
-		}
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new DynamicBorder());
-		this.chatContainer.addChild(progress);
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(worktreeProgress);
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(this.advisorQuestionsComponent);
-		this.chatContainer.addChild(new DynamicBorder());
-		this.statusContainer.clear();
-		this.statusContainer.addChild(new Text("Advisor worktree sub-agent running (reply with /advisor-reply)", 1));
-		this.ui.requestRender();
-
-		worktreeProgress.setBranchRunning("sub1");
-		progress.setExecutorRunning("sub-agent/worktree", 1);
-		const result = await spawner.spawnInWorktree("sub1", task, "default", {
-			cwd: process.cwd(),
-			onStdout: (line) => {
-				if (line) progress.updateWorkerStream(line);
-				this.ui.requestRender();
-			},
-			onStderr: (line) => {
-				if (line) progress.setWorkerTool(`stderr: ${line.substring(0, 120)}`);
-				this.ui.requestRender();
-			},
-			onQuestion: async (q) => this.handleIncomingSubAgentQuestion(q, progress),
-		});
-
-		if (result.status === "completed") {
-			this.pushAdvisorHistory("advisor worktree run completed");
-			worktreeProgress.setBranchCompleted("sub1");
-			progress.setWorkerDone(1);
-			progress.setCompleted(result.output || "completed");
-		} else {
-			this.pushAdvisorHistory(`advisor worktree run failed: ${result.error || "unknown error"}`);
-			worktreeProgress.setBranchFailed("sub1", result.error || "worktree sub-agent failed");
-			progress.setError(result.error || "worktree sub-agent failed");
-		}
-		this.statusContainer.clear();
-		this.advisorQuestionsComponent = undefined;
-		this.closeAdvisorReplyDialog();
-		this.advisorRunInProgress = false;
-		this.ui.requestRender();
-	}
-
-	private async handleAdvisorWorktreeParallelCommand(task?: string): Promise<void> {
-		if (this.advisorRunInProgress) {
-			this.showWarning("Advisor is already running");
-			return;
-		}
-		task = this.resolveAdvisorTask(task);
-		if (!task) {
-			this.showWarning("Usage: /advisor-worktree-parallel <task description>");
-			return;
-		}
-		this.advisorRunInProgress = true;
-		this.pushAdvisorHistory(`advisor parallel worktree run started: ${task.substring(0, 120)}`);
-
-		const { createAdvisorSystem, TaskClassifier, TaskSplitter } = await import("../../core/advisor/index.js");
-		const registry = this.session.modelRegistry;
-		const { spawner } = createAdvisorSystem(registry, undefined, process.cwd());
-		const classifier = new TaskClassifier(registry);
-		const splitter = new TaskSplitter(registry);
-		const primaryType = await classifier.classify(task);
-		const branchTasks = await splitter.split(
-			task,
-			primaryType,
-			this.advisorParallelMinBranches,
-			this.advisorParallelMaxBranches,
-		);
-
-		const progress = new AdvisorProgressComponent();
-		const selectedBranchTasks = branchTasks.slice(0, this.advisorParallelMaxBranchesPerRun);
-		if (branchTasks.length > selectedBranchTasks.length) {
-			this.showStatus(
-				`Safety trim: ${branchTasks.length} -> ${selectedBranchTasks.length} branches (max=${this.advisorParallelMaxBranchesPerRun})`,
-			);
-		}
-		const worktreeProgress = new WorkTreeProgressComponent(selectedBranchTasks.map((b) => b.id));
-		this.advisorQuestionsComponent = new AdvisorPendingQuestionsComponent();
-		if (this.advisorQuestionFilterSubAgentId) {
-			this.advisorQuestionsComponent.setFilter(this.advisorQuestionFilterSubAgentId);
-		}
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new DynamicBorder());
-		this.chatContainer.addChild(progress);
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(worktreeProgress);
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(this.advisorQuestionsComponent);
-		this.chatContainer.addChild(new DynamicBorder());
-		this.statusContainer.clear();
-		this.statusContainer.addChild(new Text("Advisor parallel worktree sub-agents running", 1));
-		this.ui.requestRender();
-
-		progress.setExecutorRunning("sub-agent/worktree-parallel", 1);
-		for (const t of selectedBranchTasks) worktreeProgress.setBranchRunning(t.id);
-
-		const resultMap = await spawner.spawnParallelInWorktrees(
-			selectedBranchTasks,
-			{
-				cwd: process.cwd(),
-				timeout: 300000,
-				totalTimeoutMs: this.advisorParallelGlobalTimeoutMs,
-				maxTasks: this.advisorParallelMaxBranchesPerRun,
-				failFast: this.advisorParallelFailFast,
-				parallelism: Math.min(3, selectedBranchTasks.length),
-				onQuestion: async (q) => this.handleIncomingSubAgentQuestion(q, progress),
-			},
-			(id, line) => {
-				if (line) progress.updateWorkerStream(`[${id}] ${line}`);
-				this.ui.requestRender();
-			},
-		);
-
-		const results = Array.from(resultMap.values());
-
-		for (const result of results) {
-			if (result.status === "completed") worktreeProgress.setBranchCompleted(result.id);
-			else worktreeProgress.setBranchFailed(result.id, result.error || "failed");
-		}
-
-		const merged = await spawner.mergeResults(resultMap);
-		progress.setWorkerDone(1);
-		progress.setCompleted(merged);
-		this.pushAdvisorHistory("advisor parallel worktree run completed");
-
-		this.statusContainer.clear();
-		this.advisorQuestionsComponent = undefined;
-		this.closeAdvisorReplyDialog();
-		this.advisorRunInProgress = false;
-		this.ui.requestRender();
+	private async handleAdvisorWorktreeParallelCommand(_task?: string): Promise<void> {
+		this.showWarning("Advisor parallel worktree commands are disabled. Use /model or /planner instead.");
 	}
 
 	private async handleAdvisorParallelConfigCommand(arg: string): Promise<void> {
@@ -5230,12 +4959,10 @@ export class InteractiveMode {
 	private async handleAdvisorQuestionFilterCommand(arg: string): Promise<void> {
 		const normalized = arg.trim();
 		if (!normalized || normalized.toLowerCase() === "all") {
-			this.advisorQuestionFilterSubAgentId = undefined;
 			this.advisorQuestionsComponent?.setFilter(undefined);
 			this.showStatus("Advisor question filter: all");
 			return;
 		}
-		this.advisorQuestionFilterSubAgentId = normalized;
 		this.advisorQuestionsComponent?.setFilter(normalized);
 		this.showStatus(`Advisor question filter: ${normalized}`);
 	}
@@ -5347,20 +5074,7 @@ export class InteractiveMode {
 	}
 
 	private async handleAdvisorConfigCommand(): Promise<void> {
-		const { createAdvisorSystem } = await import("../../core/advisor/index.js");
-		const registry = this.session.modelRegistry;
-		const { router } = createAdvisorSystem(registry);
-		const routings = router.allRoutings();
-		const lines = routings.map(
-			(r) =>
-				`- ${r.type}: ${r.routing.advisor.provider}/${r.routing.advisor.model} -> ${r.routing.worker.provider}/${r.routing.worker.model} (max ${r.routing.maxIterations})`,
-		);
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new DynamicBorder());
-		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Advisor Routing")), 1, 0));
-		this.chatContainer.addChild(new Text(theme.fg("muted", lines.join("\n")), 1, 0));
-		this.chatContainer.addChild(new DynamicBorder());
-		this.ui.requestRender();
+		this.showWarning("Advisor config is disabled. Use /model or /planner instead.");
 	}
 
 	private releasePendingAdvisorQuestions(reason: string): number {
@@ -5417,13 +5131,12 @@ export class InteractiveMode {
 			this.loadingAnimation.stop();
 			this.loadingAnimation = undefined;
 		}
-		this.statusContainer.clear();
 
-		try {
-			await this.session.compact(customInstructions);
-		} catch {
-			// Ignore, will be emitted as an event
-		}
+		await this.commands?.handleCompactCommand(customInstructions);
+	}
+
+	private async handlePlannerCommand(searchTerm?: string): Promise<void> {
+		await this.commands?.handlePlannerCommand(searchTerm);
 	}
 
 	stop(): void {

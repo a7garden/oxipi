@@ -1,0 +1,10 @@
+{
+  "version": "2.0",
+  "defaults": {
+    "executor": "minimax/m2.7",
+    "planner": "zai/glm-5.1"
+  },
+  "settings": {
+    "maxIterations": 3
+  }
+}

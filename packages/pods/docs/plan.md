@@ -88,7 +88,7 @@ All model commands (`pi start`, `pi stop`, etc.) target the active pod, unless `
 Pi uses direct SSH commands to manage vLLM instances on pods. No remote manager component is needed - everything is controlled from the local pi CLI.
 
 ### Architecture
-The pi CLI maintains all state locally in `~/.pi/pods.json`:
+The pi CLI maintains all state locally in `~/.oxipi/pods.json`:
 ```json
 {
   "pods": {
