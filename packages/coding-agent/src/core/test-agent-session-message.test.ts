@@ -17,6 +17,6 @@ describe("Agent session message integration", () => {
 		expect(restored.length).toBe(3);
 		expect(restored[0].role).toBe("user");
 		expect(restored[1].role).toBe("assistant");
-		expect(restored[2].role).toBe("user");
+		expect(restored[2].role).toBe("toolResult");
 	});
 });
