@@ -11,7 +11,7 @@ import type { ModelRegistry } from "../model-registry.js";
 import type { SubAgentEvent, SubAgentExecutorConfig, SubAgentExecutorResult } from "../sub-agent/sub-agent-executor.js";
 import { NESTING_GUARD, SubAgentExecutor } from "../sub-agent/sub-agent-executor.js";
 import type { SubtaskPool } from "./task-pool.js";
-import type { SpawnOptions, Subtask, SubtaskProgressEvent, SubtaskResult } from "./types.js";
+import type { SpawnOptions, Subtask, SubtaskResult } from "./types.js";
 
 export interface InProcessPoolOptions {
 	/** Maximum concurrent subtasks (default: 3) */
@@ -114,7 +114,6 @@ export class InProcessPool implements SubtaskPool {
 						} else if (event.type === "executor_done") {
 							onProgress?.({ type: "output", subtaskId: task.id, text: event.output });
 						}
-						onProgress?.(event as unknown as SubtaskProgressEvent);
 					};
 
 					// Run with timeout check
