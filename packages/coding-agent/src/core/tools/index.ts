@@ -1,3 +1,4 @@
+export { createAdvisorToolDefinition } from "./advisor.js";
 export {
 	type BashOperations,
 	type BashSpawnContext,
