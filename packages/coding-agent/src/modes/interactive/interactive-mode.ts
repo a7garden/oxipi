@@ -238,6 +238,9 @@ export class InteractiveMode {
 	private advisorQuestionFilterSubAgentId: string | undefined;
 	private advisorParallelMinBranches = 3;
 	private advisorParallelMaxBranches = 5;
+	private advisorParallelMaxBranchesPerRun = 6;
+	private advisorParallelGlobalTimeoutMs = 20 * 60 * 1000;
+	private advisorParallelFailFast = true;
 	private advisorAutoDelegationEnabled = true;
 	private readonly advisorFooterBadgeKey = "advisor-auto";
 	private advisorHistory: string[] = [];
@@ -2312,6 +2315,12 @@ export class InteractiveMode {
 			if (text.startsWith("/advisor-parallel-config")) {
 				const arg = text.slice(24).trim();
 				await this.handleAdvisorParallelConfigCommand(arg);
+				this.editor.setText("");
+				return;
+			}
+			if (text.startsWith("/advisor-parallel-safety")) {
+				const arg = text.slice(24).trim();
+				await this.handleAdvisorParallelSafetyCommand(arg);
 				this.editor.setText("");
 				return;
 			}
@@ -5063,7 +5072,13 @@ export class InteractiveMode {
 		);
 
 		const progress = new AdvisorProgressComponent();
-		const worktreeProgress = new WorkTreeProgressComponent(branchTasks.map((b) => b.id));
+		const selectedBranchTasks = branchTasks.slice(0, this.advisorParallelMaxBranchesPerRun);
+		if (branchTasks.length > selectedBranchTasks.length) {
+			this.showStatus(
+				`Safety trim: ${branchTasks.length} -> ${selectedBranchTasks.length} branches (max=${this.advisorParallelMaxBranchesPerRun})`,
+			);
+		}
+		const worktreeProgress = new WorkTreeProgressComponent(selectedBranchTasks.map((b) => b.id));
 		this.advisorQuestionsComponent = new AdvisorPendingQuestionsComponent();
 		if (this.advisorQuestionFilterSubAgentId) {
 			this.advisorQuestionsComponent.setFilter(this.advisorQuestionFilterSubAgentId);
@@ -5081,28 +5096,28 @@ export class InteractiveMode {
 		this.ui.requestRender();
 
 		progress.setExecutorRunning("sub-agent/worktree-parallel", 1);
-		for (const t of branchTasks) worktreeProgress.setBranchRunning(t.id);
+		for (const t of selectedBranchTasks) worktreeProgress.setBranchRunning(t.id);
 
-		const results = await Promise.all(
-			branchTasks.map((branch) =>
-				spawner.spawnInWorktree(branch.id, branch.task, branch.type, {
-					cwd: process.cwd(),
-					onStdout: (line) => {
-						if (line) progress.updateWorkerStream(`[${branch.id}] ${line}`);
-						this.ui.requestRender();
-					},
-					onStderr: (line) => {
-						if (line) progress.setWorkerTool(`${branch.id} stderr: ${line.substring(0, 100)}`);
-						this.ui.requestRender();
-					},
-					onQuestion: async (q) => this.handleIncomingSubAgentQuestion(q, progress),
-				}),
-			),
+		const resultMap = await spawner.spawnParallelInWorktrees(
+			selectedBranchTasks,
+			{
+				cwd: process.cwd(),
+				timeout: 300000,
+				totalTimeoutMs: this.advisorParallelGlobalTimeoutMs,
+				maxTasks: this.advisorParallelMaxBranchesPerRun,
+				failFast: this.advisorParallelFailFast,
+				parallelism: Math.min(3, selectedBranchTasks.length),
+				onQuestion: async (q) => this.handleIncomingSubAgentQuestion(q, progress),
+			},
+			(id, line) => {
+				if (line) progress.updateWorkerStream(`[${id}] ${line}`);
+				this.ui.requestRender();
+			},
 		);
 
-		const resultMap = new Map<string, (typeof results)[number]>();
+		const results = Array.from(resultMap.values());
+
 		for (const result of results) {
-			resultMap.set(result.id, result);
 			if (result.status === "completed") worktreeProgress.setBranchCompleted(result.id);
 			else worktreeProgress.setBranchFailed(result.id, result.error || "failed");
 		}
@@ -5144,6 +5159,48 @@ export class InteractiveMode {
 		this.advisorParallelMinBranches = min;
 		this.advisorParallelMaxBranches = max;
 		this.showStatus(`Advisor parallel config updated: min=${min}, max=${max}`);
+	}
+
+	private async handleAdvisorParallelSafetyCommand(arg: string): Promise<void> {
+		const normalized = arg.trim();
+		if (!normalized) {
+			this.showStatus(
+				`Advisor safety: maxBranches=${this.advisorParallelMaxBranchesPerRun}, totalTimeoutMs=${this.advisorParallelGlobalTimeoutMs}, failFast=${this.advisorParallelFailFast}`,
+			);
+			return;
+		}
+
+		const parts = normalized.split(/\s+/).filter(Boolean);
+		if (parts.length !== 3) {
+			this.showWarning("Usage: /advisor-parallel-safety <maxBranches> <totalTimeoutMs> <failFast:true|false>");
+			return;
+		}
+
+		const maxBranches = Number.parseInt(parts[0], 10);
+		const totalTimeoutMs = Number.parseInt(parts[1], 10);
+		const failFastRaw = parts[2].toLowerCase();
+		const failFast = failFastRaw === "true" || failFastRaw === "1" || failFastRaw === "yes";
+		const failFastValid = ["true", "false", "1", "0", "yes", "no"].includes(failFastRaw);
+
+		if (
+			!Number.isFinite(maxBranches) ||
+			!Number.isFinite(totalTimeoutMs) ||
+			maxBranches < 1 ||
+			maxBranches > 12 ||
+			totalTimeoutMs < 10_000 ||
+			totalTimeoutMs > 2 * 60 * 60 * 1000 ||
+			!failFastValid
+		) {
+			this.showWarning("Invalid values. maxBranches:1-12 totalTimeoutMs:10000-7200000 failFast:true|false");
+			return;
+		}
+
+		this.advisorParallelMaxBranchesPerRun = maxBranches;
+		this.advisorParallelGlobalTimeoutMs = totalTimeoutMs;
+		this.advisorParallelFailFast = failFast;
+		this.showStatus(
+			`Advisor safety updated: maxBranches=${maxBranches}, totalTimeoutMs=${totalTimeoutMs}, failFast=${failFast}`,
+		);
 	}
 
 	private async handleAdvisorAutoDelegationCommand(arg: string): Promise<void> {

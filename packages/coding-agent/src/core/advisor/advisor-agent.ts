@@ -95,6 +95,9 @@ export interface SpawnOptions {
 	provider?: string;
 	cwd?: string;
 	timeout?: number;
+	totalTimeoutMs?: number;
+	maxTasks?: number;
+	failFast?: boolean;
 	parallelism?: number;
 	command?: string;
 	questionPollMs?: number;
@@ -759,76 +762,69 @@ export class SubAgentSpawner {
 		opts: SpawnOptions = {},
 		onProgress?: (id: string, line: string) => void,
 	): Promise<Map<string, SubAgentResult>> {
-		const wm = opts.cwd ? new WorktreeManager(opts.cwd) : this.worktreeManager!;
-		const command = opts.command || "oxipi";
-		const parallelism = Math.max(1, Math.min(opts.parallelism ?? 3, Math.max(1, tasks.length)));
-		const branches = new Map<string, WorktreeInfo>();
-
-		// Pre-create all worktrees
-		for (const task of tasks) {
-			const branchName = `oxipi-${task.id}`;
-			try {
-				const info = await wm.create(branchName, "main");
-				branches.set(task.id, info);
-			} catch (e: any) {
-				onProgress?.(task.id, `[worktree error] ${e.message}`);
-			}
+		const maxTasks = Math.max(1, opts.maxTasks ?? tasks.length);
+		const selectedTasks = tasks.slice(0, maxTasks);
+		if (tasks.length > selectedTasks.length) {
+			onProgress?.(
+				"system",
+				`[safety] task count trimmed ${tasks.length} -> ${selectedTasks.length} (maxTasks=${maxTasks})`,
+			);
 		}
 
-		const executeTask = async (task: SubAgentTask): Promise<SubAgentResult> => {
-			const branch = branches.get(task.id);
-			const routing = this.router.getRouting(task.type);
-			const model = opts.model || routing.worker.model;
-			const start = Date.now();
-			let output = "";
-			let errOut = "";
-
-			try {
-				const result = await this.runProcess(command, ["-p", "--no-session", "--model", model, task.task], {
-					cwd: branch?.path || opts.cwd || ".",
-					timeout: opts.timeout || 300000,
-					onStdout: (line) => {
-						output += `${line}\n`;
-						onProgress?.(task.id, line);
-					},
-					onStderr: (line) => {
-						errOut += `${line}\n`;
-					},
-				});
-				return {
-					id: task.id,
-					status: result.exitCode === 0 ? ("completed" as const) : ("failed" as const),
-					output,
-					error: result.exitCode !== 0 ? errOut : undefined,
-					duration: Date.now() - start,
-					worktree: branch?.path,
-					branch: branch?.branch,
-				};
-			} catch (e: any) {
-				return {
-					id: task.id,
-					status: "failed" as const,
-					error: e.message,
-					duration: Date.now() - start,
-					worktree: branch?.path,
-					branch: branch?.branch,
-				};
-			}
-		};
+		const parallelism = Math.max(1, Math.min(opts.parallelism ?? 3, Math.max(1, selectedTasks.length)));
+		const deadline = opts.totalTimeoutMs
+			? Date.now() + Math.max(1000, opts.totalTimeoutMs)
+			: Number.POSITIVE_INFINITY;
+		const failFast = opts.failFast ?? false;
 
 		const results: SubAgentResult[] = [];
 		let index = 0;
+		let failedCount = 0;
+
 		const workers = Array.from({ length: parallelism }, async () => {
 			while (true) {
+				if (failFast && failedCount > 0) break;
+				if (Date.now() >= deadline) break;
 				const current = index++;
-				if (current >= tasks.length) break;
-				results.push(await executeTask(tasks[current]));
+				if (current >= selectedTasks.length) break;
+				const task = selectedTasks[current];
+
+				const remaining = deadline - Date.now();
+				if (!Number.isFinite(remaining) || remaining <= 0) {
+					results.push({
+						id: task.id,
+						status: "failed",
+						error: "Global timeout reached before execution",
+						duration: 0,
+					});
+					failedCount++;
+					continue;
+				}
+
+				const perTaskTimeout = Math.min(opts.timeout || 300000, Math.max(1000, remaining));
+				const result = await this.spawnInWorktree(task.id, task.task, task.type, {
+					...opts,
+					timeout: perTaskTimeout,
+					onStdout: (line) => {
+						onProgress?.(task.id, line);
+						opts.onStdout?.(line);
+					},
+					onStderr: (line) => {
+						opts.onStderr?.(line);
+					},
+				});
+				results.push(result);
+				if (result.status === "failed") {
+					failedCount++;
+				}
 			}
 		});
+
 		await Promise.all(workers);
 
-		// Cleanup all worktrees
-		await Promise.allSettled(Array.from(branches.values()).map((b) => wm.remove(b.path, true)));
+		if (Date.now() >= deadline) {
+			onProgress?.("system", "[safety] global timeout reached during parallel run");
+		}
 
 		const map = new Map<string, SubAgentResult>();
 		for (const r of results) map.set(r.id, r);
