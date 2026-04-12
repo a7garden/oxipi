@@ -69,16 +69,18 @@ export class InProcessPool implements SubtaskPool {
 				// Emit cancelled progress events so callers can distinguish between
 				// "zero tasks spawned" and "all tasks were cancelled"
 				for (const task of tasks) {
+					const result: SubtaskResult = {
+						id: task.id,
+						status: "cancelled",
+						failureReason: "cancelled",
+						duration: 0,
+						cleaned: true,
+					};
+					results.set(task.id, result);
 					onProgress?.({
 						type: "completed",
 						subtaskId: task.id,
-						result: {
-							id: task.id,
-							status: "cancelled",
-							failureReason: "cancelled",
-							duration: 0,
-							cleaned: true,
-						},
+						result,
 					});
 				}
 				return results;
