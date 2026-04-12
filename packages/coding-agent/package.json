@@ -1,6 +1,6 @@
 {
 	"name": "@oxipi/coding-agent",
-	"version": "0.66.1",
+	"version": "0.66.2",
 	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
 	"type": "module",
 	"piConfig": {
@@ -40,9 +40,9 @@
 	},
 	"dependencies": {
 		"@mariozechner/jiti": "^2.6.2",
-		"@oxipi/agent-core": "^0.66.1",
-		"@oxipi/ai": "^0.66.1",
-		"@oxipi/tui": "^0.66.1",
+		"@oxipi/agent-core": "^0.66.2",
+		"@oxipi/ai": "^0.66.2",
+		"@oxipi/tui": "^0.66.2",
 		"@silvia-odwyer/photon-node": "^0.3.4",
 		"ajv": "^8.17.1",
 		"chalk": "^5.5.0",
