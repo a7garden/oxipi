@@ -97,6 +97,7 @@ export interface Settings {
 	sessionDir?: string; // Custom session storage directory (same format as --session-dir CLI flag)
 	executorModel?: string; // Executor model for sub-agent (e.g., "minimax/m2.7")
 	plannerModel?: string; // Planner model for sub-agent (e.g., "zai/glm-5.1")
+	enableSubagentSpawning?: boolean; // Enable spawn-subagents tool in interactive mode
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -1007,6 +1008,10 @@ export class SettingsManager {
 	 */
 	getEffectivePlannerModel(): string | undefined {
 		return this.projectSettings.plannerModel ?? this.settings.plannerModel;
+	}
+
+	getEnableSubagentSpawning(): boolean {
+		return this.settings.enableSubagentSpawning ?? false;
 	}
 
 	getCodeBlockIndent(): string {

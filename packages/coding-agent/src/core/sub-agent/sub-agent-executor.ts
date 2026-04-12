@@ -559,10 +559,19 @@ export class SubAgentSpawner {
 	private registry: ModelRegistry;
 	private router: ModelRouter;
 	private worktreeManager: WorktreeManager | null = null;
+	private executorModel: Model<Api>;
+	private plannerModel: Model<Api>;
 
 	constructor(registry: ModelRegistry, router: ModelRouter, repoPath?: string) {
 		this.registry = registry;
 		this.router = router;
+		// Resolve and store models for later use when creating SubAgentExecutor with config
+		const executorStr = router.config.defaults.executor;
+		const plannerStr = router.config.defaults.planner;
+		const [p1, m1] = executorStr.split("/");
+		const [p2, m2] = plannerStr.split("/");
+		this.executorModel = this.registry.find(p1, m1)!;
+		this.plannerModel = this.registry.find(p2, m2)!;
 		if (repoPath) this.worktreeManager = new WorktreeManager(repoPath);
 	}
 
@@ -575,7 +584,11 @@ export class SubAgentSpawner {
 		const start = Date.now();
 		NESTING_GUARD.check(); // Prevent nested sub-agent spawn
 
-		const agent = new SubAgentExecutor(this.registry, this.router);
+		const agent = new SubAgentExecutor(this.registry, {
+			executorModel: this.executorModel,
+			plannerModel: `${this.plannerModel.provider}/${this.plannerModel.id}`,
+			enableSubagentSpawning: true,
+		});
 
 		const result = await agent.run(task, (evt) => {
 			if (evt.type === "executor_done") onProgress?.(evt.output);
