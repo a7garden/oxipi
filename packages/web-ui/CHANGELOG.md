@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Added tests for format utilities (format.test.ts, 14 tests)
+
+### Changed
+
+- Removed phantom `@oxipi/tui` dependency from package.json
+
 ## [0.66.2] - 2026-04-12
 
 ## [0.66.1] - 2026-04-08

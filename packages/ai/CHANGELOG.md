@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Split `models.generated.ts` into per-provider files in `src/providers/models-generated/` for better IDE performance and reduced merge conflicts
+
 ## [0.66.2] - 2026-04-12
 
 ### Fixed

@@ -106,10 +106,25 @@ tmux kill-session -t pi-test
 - No fluff or cheerful filler text
 - Technical prose only, be kind but direct (e.g., "Thanks @user" not "Thanks so much @user!")
 
+## File Size Guidelines
+- Target: < 500 lines per source file
+- Soft limit: 800 lines (justification required in PR)
+- Hard limit: 1,200 lines (must refactor before merge)
+- Generated files and test utilities are exempt
+
+### Large Files Requiring Attention
+The following files currently exceed 1,000 lines and should be decomposed when modified:
+- `packages/ai/src/models.generated.ts` (14K lines) - Generated, exempt but split planned
+- `packages/coding-agent/src/modes/interactive/interactive-mode.ts` (4.7K lines)
+- `packages/coding-agent/src/core/agent-session.ts` (3K lines)
+- `packages/coding-agent/src/core/package-manager.ts` (2.2K lines)
+- `packages/tui/src/components/editor.ts` (2.2K lines)
+- `packages/coding-agent/src/core/extensions/types.ts` (1.4K lines)
+- `packages/coding-agent/src/core/session-manager.ts` (1.4K lines)
+
+
 ## Changelog
 Location: `packages/*/CHANGELOG.md` (each package has its own)
-
-### Format
 Use these sections under `## [Unreleased]`:
 - `### Breaking Changes` - API changes requiring migration
 - `### Added` - New features

@@ -8,7 +8,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentMessage } from "@oxipi/agent-core";
-import type { AssistantMessage, ImageContent, Message, Model, OAuthProviderId } from "@oxipi/ai";
+import type { AssistantMessage, Message, Model, OAuthProviderId } from "@oxipi/ai";
 import type {
 	AutocompleteItem,
 	EditorComponent,
@@ -115,45 +115,13 @@ import {
 	type ThemeColor,
 	theme,
 } from "./theme/theme.js";
-
-/** Interface for components that can be expanded/collapsed */
-interface Expandable {
-	setExpanded(expanded: boolean): void;
-}
-
-function isExpandable(obj: unknown): obj is Expandable {
-	return typeof obj === "object" && obj !== null && "setExpanded" in obj && typeof obj.setExpanded === "function";
-}
-
-type CompactionQueuedMessage = {
-	text: string;
-	mode: "steer" | "followUp";
-};
-
-const ANTHROPIC_SUBSCRIPTION_AUTH_WARNING =
-	"Anthropic subscription auth is active. Third-party usage now draws from extra usage and is billed per token, not your Claude plan limits. Manage extra usage at https://claude.ai/settings/usage.";
-
-function isAnthropicSubscriptionAuthKey(apiKey: string | undefined): boolean {
-	return typeof apiKey === "string" && apiKey.startsWith("sk-ant-oat");
-}
-
-/**
- * Options for InteractiveMode initialization.
- */
-export interface InteractiveModeOptions {
-	/** Providers that were migrated to auth.json (shows warning) */
-	migratedProviders?: string[];
-	/** Warning message if session model couldn't be restored */
-	modelFallbackMessage?: string;
-	/** Initial message to send on startup (can include @file content) */
-	initialMessage?: string;
-	/** Images to attach to the initial message */
-	initialImages?: ImageContent[];
-	/** Additional messages to send after the initial message */
-	initialMessages?: string[];
-	/** Force verbose startup (overrides quietStartup setting) */
-	verbose?: boolean;
-}
+import {
+	ANTHROPIC_SUBSCRIPTION_AUTH_WARNING,
+	type CompactionQueuedMessage,
+	type InteractiveModeOptions,
+	isAnthropicSubscriptionAuthKey,
+	isExpandable,
+} from "./types.js";
 
 export class InteractiveMode {
 	private runtimeHost: AgentSessionRuntime;

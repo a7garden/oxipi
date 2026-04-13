@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Split `models.generated.ts` into per-provider files in `src/providers/models-generated/` for better IDE performance and reduced merge conflicts
+
+### Changed
+
+- Refactored shared types and helpers from `interactive-mode.ts` into new `types.ts` file
+- Removed phantom `@oxipi/tui` dependency from `@oxipi/web-ui/package.json`
+
+### Added
+
+- Added file size guidelines to `AGENTS.md` with a list of files requiring attention
+- Added tests for `@oxipi/pods` (model-configs.test.ts, 10 tests)
+- Added tests for `@oxipi/mom` (truncate.test.ts, 21 tests)
+- Added tests for `@oxipi/web-ui` (format.test.ts, 14 tests)
+
 ## [0.66.2] - 2026-04-12
 
 ### Fixed
