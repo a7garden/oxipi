@@ -151,6 +151,7 @@ export class InteractiveMode {
 	private lastEscapeTime = 0;
 	private changelogMarkdown: string | undefined = undefined;
 	private startupNoticesShown = false;
+	private isFreshInstall = false;
 	private anthropicSubscriptionWarningShown = false;
 
 	// Status line tracking (for mutating immediately-sequential status updates)
@@ -413,6 +414,33 @@ export class InteractiveMode {
 		}
 		this.startupNoticesShown = true;
 
+		// Show fresh install welcome
+		if (this.isFreshInstall) {
+			if (this.chatContainer.children.length > 0) {
+				this.chatContainer.addChild(new Spacer(1));
+			}
+			this.chatContainer.addChild(new DynamicBorder());
+			this.chatContainer.addChild(
+				new Text(
+					theme.fg("accent", theme.bold(`Welcome to ${APP_NAME}`)) + theme.fg("dim", ` v${this.version}`),
+					1,
+					0,
+				),
+			);
+			this.chatContainer.addChild(new Spacer(1));
+			const welcomeLines = [
+				`${theme.bold("Getting started:")}`,
+				`${theme.fg("dim", "  \u2022")} Just type a message to start coding`,
+				`${theme.fg("dim", "  \u2022")} ${theme.bold("/model")} to switch models`,
+				`${theme.fg("dim", "  \u2022")} ${theme.bold("/settings")} to configure`,
+				`${theme.fg("dim", "  \u2022")} Ask "how do I use pi?" for docs`,
+			].join("\n");
+			this.chatContainer.addChild(new Text(welcomeLines, 1, 0));
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new DynamicBorder());
+			return;
+		}
+
 		if (!this.changelogMarkdown) {
 			return;
 		}
@@ -481,7 +509,7 @@ export class InteractiveMode {
 			].join("\n");
 			const onboarding = theme.fg(
 				"dim",
-				`Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.`,
+				`Ask anything. Pi can explain its own features and look up its docs.\nType ${theme.bold("/help")} for slash commands, or just start coding.`,
 			);
 			this.builtInHeader = new Text(`${logo}\n${instructions}\n\n${onboarding}`, 1, 0);
 
@@ -762,8 +790,9 @@ export class InteractiveMode {
 		const entries = parseChangelog(changelogPath);
 
 		if (!lastVersion) {
-			// Fresh install - just record the version, don't show changelog
+			// Fresh install - record version and show welcome
 			this.settingsManager.setLastChangelogVersion(VERSION);
+			this.isFreshInstall = true;
 			return undefined;
 		} else {
 			const newEntries = getNewEntries(entries, lastVersion);

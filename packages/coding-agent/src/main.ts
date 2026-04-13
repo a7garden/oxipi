@@ -15,7 +15,7 @@ import { processFileArguments } from "./cli/file-processor.js";
 import { buildInitialMessage } from "./cli/initial-message.js";
 import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
-import { getAgentDir, getModelsPath, VERSION } from "./config.js";
+import { APP_NAME, detectInstallMethod, getAgentDir, getModelsPath, VERSION } from "./config.js";
 import { type CreateAgentSessionRuntimeFactory, createAgentSessionRuntime } from "./core/agent-session-runtime.js";
 import {
 	type AgentSessionRuntimeDiagnostic,
@@ -90,6 +90,17 @@ function reportDiagnostics(diagnostics: readonly AgentSessionRuntimeDiagnostic[]
 function isTruthyEnvFlag(value: string | undefined): boolean {
 	if (!value) return false;
 	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
+}
+
+function printVersion(): void {
+	const runtime = process.versions.bun ? `bun ${process.versions.bun}` : `node ${process.version}`;
+	const install = detectInstallMethod();
+
+	const lines = [
+		`${chalk.bold(chalk.cyan(APP_NAME))} ${chalk.bold(`v${VERSION}`)}`,
+		chalk.dim(`${runtime}  ${install}  ${process.platform}/${process.arch}`),
+	];
+	console.log(lines.join("\n"));
 }
 
 type AppMode = "interactive" | "print" | "json" | "rpc";
@@ -434,6 +445,40 @@ export async function main(args: string[]) {
 		return;
 	}
 
+	// Handle subcommands that need early routing before arg parsing
+	if (args[0] === "doctor") {
+		const { runDoctor } = await import("./cli/doctor.js");
+		const cwd = process.cwd();
+		const agentDir = getAgentDir();
+		const settingsManager = SettingsManager.create(cwd, agentDir);
+		await runDoctor(settingsManager);
+		return;
+	}
+
+	if (args[0] === "info") {
+		const { runInfo } = await import("./cli/info.js");
+		const cwd = process.cwd();
+		const agentDir = getAgentDir();
+		const settingsManager = SettingsManager.create(cwd, agentDir);
+		await runInfo(settingsManager);
+		return;
+	}
+
+	if (args[0] === "sessions") {
+		const { runSessions, parseSessionsArgs, printSessionsHelp } = await import("./cli/sessions.js");
+		const opts = parseSessionsArgs(args.slice(1));
+		if (opts.help) {
+			printSessionsHelp();
+			return;
+		}
+		const cwd = process.cwd();
+		const agentDir = getAgentDir();
+		const startupSettings = SettingsManager.create(cwd, agentDir);
+		const sessionDir = startupSettings.getSessionDir();
+		await runSessions(opts, cwd, sessionDir);
+		return;
+	}
+
 	const parsed = parseArgs(args);
 	if (parsed.diagnostics.length > 0) {
 		for (const d of parsed.diagnostics) {
@@ -452,7 +497,7 @@ export async function main(args: string[]) {
 	}
 
 	if (parsed.version) {
-		console.log(VERSION);
+		printVersion();
 		process.exit(0);
 	}
 
@@ -659,10 +704,18 @@ export async function main(args: string[]) {
 	time("createAgentSession");
 
 	if (appMode !== "interactive" && !session.model) {
-		console.error(chalk.red("No models available."));
-		console.error(chalk.yellow("\nSet an API key environment variable:"));
-		console.error("  ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, etc.");
-		console.error(chalk.yellow(`\nOr create ${getModelsPath()}`));
+		console.error();
+		console.error(chalk.bold(chalk.red(`  ${APP_NAME} needs at least one model to work with.`)));
+		console.error();
+		console.error(chalk.bold("  Quick start:"));
+		console.error(`${chalk.dim("    1.")} Set an API key:`);
+		console.error(
+			chalk.cyan("       export ANTHROPIC_API_KEY=...") + chalk.dim("  # or OPENAI_API_KEY, GEMINI_API_KEY, ..."),
+		);
+		console.error(`${chalk.dim("    2.")} Or add custom models to ${chalk.cyan(getModelsPath())}`);
+		console.error();
+		console.error(chalk.dim(`  Run ${chalk.bold(`${APP_NAME} doctor`)} to diagnose your setup.`));
+		console.error();
 		process.exit(1);
 	}
 

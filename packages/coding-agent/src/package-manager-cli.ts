@@ -138,15 +138,171 @@ function parsePackageCommand(args: string[]): PackageCommandOptions | undefined 
 	return { command, source, local, help, invalidOption };
 }
 
+const CONFIG_GETTERS: Record<string, { getter: (sm: SettingsManager) => unknown; description: string }> = {
+	theme: { getter: (sm) => sm.getTheme(), description: "UI theme name" },
+	"quiet-startup": { getter: (sm) => sm.getQuietStartup(), description: "Suppress startup banner" },
+	"default-provider": { getter: (sm) => sm.getDefaultProvider(), description: "Default LLM provider" },
+	"default-model": { getter: (sm) => sm.getDefaultModel(), description: "Default model ID" },
+	"default-thinking": { getter: (sm) => sm.getDefaultThinkingLevel(), description: "Default thinking level" },
+	"enabled-models": { getter: (sm) => sm.getEnabledModels(), description: "Model patterns for Ctrl+P" },
+	transport: { getter: (sm) => sm.getTransport(), description: "API transport (sse or streamable-http)" },
+	"hide-thinking": { getter: (sm) => sm.getHideThinkingBlock(), description: "Hide thinking blocks" },
+	"session-dir": { getter: (sm) => sm.getSessionDir(), description: "Custom session directory" },
+	"shell-path": { getter: (sm) => sm.getShellPath(), description: "Custom shell path" },
+	"shell-command-prefix": {
+		getter: (sm) => sm.getShellCommandPrefix(),
+		description: "Prefix prepended to every bash command",
+	},
+	"collapse-changelog": { getter: (sm) => sm.getCollapseChangelog(), description: "Collapse changelog on startup" },
+	"editor-padding-x": { getter: (sm) => sm.getEditorPaddingX(), description: "Editor horizontal padding" },
+	"autocomplete-max-visible": {
+		getter: (sm) => sm.getAutocompleteMaxVisible(),
+		description: "Max visible autocomplete items",
+	},
+};
+
+function printConfigHelp(): void {
+	console.log(`${chalk.bold("Usage:")}
+  ${APP_NAME} config                     Open TUI config selector
+  ${APP_NAME} config get <key>            Print a setting value
+  ${APP_NAME} config set <key> <value>    Set a setting value
+  ${APP_NAME} config list                 List all settings
+
+${chalk.bold("Available keys:")}
+${Object.entries(CONFIG_GETTERS)
+	.map(([key, { description }]) => `  ${key.padEnd(28)}${chalk.dim(description)}`)
+	.join("\n")}
+`);
+}
+
+function handleConfigGet(settingsManager: SettingsManager, key: string): void {
+	const entry = CONFIG_GETTERS[key];
+	if (!entry) {
+		console.error(chalk.red(`Unknown setting: ${key}`));
+		console.error(chalk.dim(`Run \`${APP_NAME} config get --help\` for available keys.`));
+		process.exitCode = 1;
+		return;
+	}
+	const value = entry.getter(settingsManager);
+	if (value === undefined || value === null) {
+		console.log(chalk.dim("(not set)"));
+	} else if (Array.isArray(value)) {
+		console.log(value.join(", "));
+	} else {
+		console.log(String(value));
+	}
+}
+
+function handleConfigSet(args: string[], settingsManager: SettingsManager): void {
+	const key = args[0];
+	const value = args[1];
+
+	if (!key || !value) {
+		console.error(chalk.red(`Usage: ${APP_NAME} config set <key> <value>`));
+		process.exitCode = 1;
+		return;
+	}
+
+	switch (key) {
+		case "theme":
+			settingsManager.setTheme(value);
+			break;
+		case "quiet-startup":
+			settingsManager.setQuietStartup(value === "true");
+			break;
+		case "default-provider":
+			settingsManager.setDefaultProvider(value);
+			break;
+		case "default-model":
+			settingsManager.setDefaultModel(value);
+			break;
+		case "default-thinking":
+			settingsManager.setDefaultThinkingLevel(value as any);
+			break;
+		case "enabled-models":
+			settingsManager.setEnabledModels(value.split(",").map((s) => s.trim()));
+			break;
+		case "hide-thinking":
+			settingsManager.setHideThinkingBlock(value === "true");
+			break;
+		case "session-dir":
+			console.error(chalk.yellow(`session-dir cannot be set via CLI. Edit settings.json directly.`));
+			process.exitCode = 1;
+			return;
+		case "shell-path":
+			settingsManager.setShellPath(value);
+			break;
+		case "shell-command-prefix":
+			settingsManager.setShellCommandPrefix(value);
+			break;
+		case "collapse-changelog":
+			settingsManager.setCollapseChangelog(value === "true");
+			break;
+		case "editor-padding-x":
+			settingsManager.setEditorPaddingX(parseInt(value, 10));
+			break;
+		case "autocomplete-max-visible":
+			settingsManager.setAutocompleteMaxVisible(parseInt(value, 10));
+			break;
+		default:
+			console.error(chalk.red(`Unknown setting: ${key}`));
+			console.error(chalk.dim(`Run \`${APP_NAME} config set --help\` for available keys.`));
+			process.exitCode = 1;
+			return;
+	}
+	console.log(chalk.green(`Set ${key} = ${value}`));
+}
+
+function handleConfigList(settingsManager: SettingsManager): void {
+	for (const [key, { description, getter }] of Object.entries(CONFIG_GETTERS)) {
+		const value = getter(settingsManager);
+		const display = value === undefined || value === null ? chalk.dim("(not set)") : String(value);
+		console.log(`${chalk.bold(key.padEnd(28))}${display}  ${chalk.dim(description)}`);
+	}
+}
+
 export async function handleConfigCommand(args: string[]): Promise<boolean> {
 	if (args[0] !== "config") {
 		return false;
 	}
 
+	const subArgs = args.slice(1);
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
 	const settingsManager = SettingsManager.create(cwd, agentDir);
 	reportSettingsErrors(settingsManager, "config command");
+
+	// config get <key>
+	if (subArgs[0] === "get") {
+		if (subArgs[1] === "--help" || subArgs[1] === "-h") {
+			printConfigHelp();
+			return true;
+		}
+		if (!subArgs[1]) {
+			printConfigHelp();
+			return true;
+		}
+		handleConfigGet(settingsManager, subArgs[1]);
+		return true;
+	}
+
+	// config set <key> <value>
+	if (subArgs[0] === "set") {
+		if (subArgs[1] === "--help" || subArgs[1] === "-h") {
+			printConfigHelp();
+			return true;
+		}
+		handleConfigSet(subArgs.slice(1), settingsManager);
+		return true;
+	}
+
+	// config list
+	if (subArgs[0] === "list") {
+		handleConfigList(settingsManager);
+		return true;
+	}
+
+	// config (no subcommand) — open TUI
 	const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
 	const resolvedPaths = await packageManager.resolve();
 
@@ -222,7 +378,9 @@ export async function handlePackageCommand(args: string[]): Promise<boolean> {
 				const projectPackages = configuredPackages.filter((pkg) => pkg.scope === "project");
 
 				if (configuredPackages.length === 0) {
-					console.log(chalk.dim("No packages installed."));
+					console.log(
+						chalk.dim(`No packages installed. Run ${chalk.bold(`${APP_NAME} install <source>`)} to add one.`),
+					);
 					return true;
 				}
 
