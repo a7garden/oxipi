@@ -565,7 +565,7 @@ export const azure_openai_responses_MODELS = {
 		contextWindow: 1050000,
 		maxTokens: 128000,
 	} satisfies Model<"azure-openai-responses">,
-	"o1": {
+	o1: {
 		id: "o1",
 		name: "o1",
 		api: "azure-openai-responses",
@@ -599,7 +599,7 @@ export const azure_openai_responses_MODELS = {
 		contextWindow: 200000,
 		maxTokens: 100000,
 	} satisfies Model<"azure-openai-responses">,
-	"o3": {
+	o3: {
 		id: "o3",
 		name: "o3",
 		api: "azure-openai-responses",

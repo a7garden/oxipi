@@ -10,7 +10,12 @@ export const github_copilot_MODELS = {
 		api: "anthropic-messages",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -28,7 +33,12 @@ export const github_copilot_MODELS = {
 		api: "anthropic-messages",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -46,7 +56,12 @@ export const github_copilot_MODELS = {
 		api: "anthropic-messages",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -64,7 +79,12 @@ export const github_copilot_MODELS = {
 		api: "anthropic-messages",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -82,7 +102,12 @@ export const github_copilot_MODELS = {
 		api: "anthropic-messages",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -100,7 +125,12 @@ export const github_copilot_MODELS = {
 		api: "anthropic-messages",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -118,8 +148,13 @@ export const github_copilot_MODELS = {
 		api: "openai-completions",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
+		compat: { supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false },
 		reasoning: false,
 		input: ["text", "image"],
 		cost: {
@@ -137,8 +172,13 @@ export const github_copilot_MODELS = {
 		api: "openai-completions",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
+		compat: { supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false },
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -156,8 +196,13 @@ export const github_copilot_MODELS = {
 		api: "openai-completions",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
+		compat: { supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false },
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -175,8 +220,13 @@ export const github_copilot_MODELS = {
 		api: "openai-completions",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
+		compat: { supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false },
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -194,8 +244,13 @@ export const github_copilot_MODELS = {
 		api: "openai-completions",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
+		compat: { supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false },
 		reasoning: false,
 		input: ["text", "image"],
 		cost: {
@@ -213,8 +268,13 @@ export const github_copilot_MODELS = {
 		api: "openai-completions",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
+		compat: { supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false },
 		reasoning: false,
 		input: ["text", "image"],
 		cost: {
@@ -232,7 +292,12 @@ export const github_copilot_MODELS = {
 		api: "openai-responses",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -250,7 +315,12 @@ export const github_copilot_MODELS = {
 		api: "openai-responses",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -268,7 +338,12 @@ export const github_copilot_MODELS = {
 		api: "openai-responses",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -286,7 +361,12 @@ export const github_copilot_MODELS = {
 		api: "openai-responses",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -304,7 +384,12 @@ export const github_copilot_MODELS = {
 		api: "openai-responses",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -322,7 +407,12 @@ export const github_copilot_MODELS = {
 		api: "openai-responses",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -340,7 +430,12 @@ export const github_copilot_MODELS = {
 		api: "openai-responses",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -358,7 +453,12 @@ export const github_copilot_MODELS = {
 		api: "openai-responses",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -376,7 +476,12 @@ export const github_copilot_MODELS = {
 		api: "openai-responses",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -394,7 +499,12 @@ export const github_copilot_MODELS = {
 		api: "openai-responses",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -412,7 +522,12 @@ export const github_copilot_MODELS = {
 		api: "openai-responses",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -430,8 +545,13 @@ export const github_copilot_MODELS = {
 		api: "openai-completions",
 		provider: "github-copilot",
 		baseUrl: "https://api.individual.githubcopilot.com",
-		headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
+		compat: { supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false },
 		reasoning: true,
 		input: ["text"],
 		cost: {

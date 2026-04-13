@@ -6,7 +6,7 @@
  * Shares memory with parent and sibling subtasks.
  */
 
-import type { Api, Model } from "@a7garden/ai";
+import type { Api, Model } from "@oxipi/ai";
 import type { ModelRegistry } from "../model-registry.js";
 import type { SubAgentEvent, SubAgentExecutorConfig, SubAgentExecutorResult } from "../sub-agent/sub-agent-executor.js";
 import { NESTING_GUARD, SubAgentExecutor } from "../sub-agent/sub-agent-executor.js";

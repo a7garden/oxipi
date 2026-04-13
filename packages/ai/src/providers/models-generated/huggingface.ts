@@ -10,7 +10,7 @@ export const huggingface_MODELS = {
 		api: "openai-completions",
 		provider: "huggingface",
 		baseUrl: "https://router.huggingface.co/v1",
-		compat: {"supportsDeveloperRole":false},
+		compat: { supportsDeveloperRole: false },
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -28,7 +28,7 @@ export const huggingface_MODELS = {
 		api: "openai-completions",
 		provider: "huggingface",
 		baseUrl: "https://router.huggingface.co/v1",
-		compat: {"supportsDeveloperRole":false},
+		compat: { supportsDeveloperRole: false },
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -46,7 +46,7 @@ export const huggingface_MODELS = {
 		api: "openai-completions",
 		provider: "huggingface",
 		baseUrl: "https://router.huggingface.co/v1",
-		compat: {"supportsDeveloperRole":false},
+		compat: { supportsDeveloperRole: false },
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -64,7 +64,7 @@ export const huggingface_MODELS = {
 		api: "openai-completions",
 		provider: "huggingface",
 		baseUrl: "https://router.huggingface.co/v1",
-		compat: {"supportsDeveloperRole":false},
+		compat: { supportsDeveloperRole: false },
 		reasoning: false,
 		input: ["text"],
 		cost: {
@@ -82,7 +82,7 @@ export const huggingface_MODELS = {
 		api: "openai-completions",
 		provider: "huggingface",
 		baseUrl: "https://router.huggingface.co/v1",
-		compat: {"supportsDeveloperRole":false},
+		compat: { supportsDeveloperRole: false },
 		reasoning: false,
 		input: ["text"],
 		cost: {
@@ -100,7 +100,7 @@ export const huggingface_MODELS = {
 		api: "openai-completions",
 		provider: "huggingface",
 		baseUrl: "https://router.huggingface.co/v1",
-		compat: {"supportsDeveloperRole":false},
+		compat: { supportsDeveloperRole: false },
 		reasoning: false,
 		input: ["text"],
 		cost: {
@@ -118,7 +118,7 @@ export const huggingface_MODELS = {
 		api: "openai-completions",
 		provider: "huggingface",
 		baseUrl: "https://router.huggingface.co/v1",
-		compat: {"supportsDeveloperRole":false},
+		compat: { supportsDeveloperRole: false },
 		reasoning: false,
 		input: ["text"],
 		cost: {
@@ -136,7 +136,7 @@ export const huggingface_MODELS = {
 		api: "openai-completions",
 		provider: "huggingface",
 		baseUrl: "https://router.huggingface.co/v1",
-		compat: {"supportsDeveloperRole":false},
+		compat: { supportsDeveloperRole: false },
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -154,7 +154,7 @@ export const huggingface_MODELS = {
 		api: "openai-completions",
 		provider: "huggingface",
 		baseUrl: "https://router.huggingface.co/v1",
-		compat: {"supportsDeveloperRole":false},
+		compat: { supportsDeveloperRole: false },
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -172,7 +172,7 @@ export const huggingface_MODELS = {
 		api: "openai-completions",
 		provider: "huggingface",
 		baseUrl: "https://router.huggingface.co/v1",
-		compat: {"supportsDeveloperRole":false},
+		compat: { supportsDeveloperRole: false },
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -190,7 +190,7 @@ export const huggingface_MODELS = {
 		api: "openai-completions",
 		provider: "huggingface",
 		baseUrl: "https://router.huggingface.co/v1",
-		compat: {"supportsDeveloperRole":false},
+		compat: { supportsDeveloperRole: false },
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -208,7 +208,7 @@ export const huggingface_MODELS = {
 		api: "openai-completions",
 		provider: "huggingface",
 		baseUrl: "https://router.huggingface.co/v1",
-		compat: {"supportsDeveloperRole":false},
+		compat: { supportsDeveloperRole: false },
 		reasoning: false,
 		input: ["text"],
 		cost: {
@@ -226,7 +226,7 @@ export const huggingface_MODELS = {
 		api: "openai-completions",
 		provider: "huggingface",
 		baseUrl: "https://router.huggingface.co/v1",
-		compat: {"supportsDeveloperRole":false},
+		compat: { supportsDeveloperRole: false },
 		reasoning: false,
 		input: ["text"],
 		cost: {
@@ -244,7 +244,7 @@ export const huggingface_MODELS = {
 		api: "openai-completions",
 		provider: "huggingface",
 		baseUrl: "https://router.huggingface.co/v1",
-		compat: {"supportsDeveloperRole":false},
+		compat: { supportsDeveloperRole: false },
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -262,7 +262,7 @@ export const huggingface_MODELS = {
 		api: "openai-completions",
 		provider: "huggingface",
 		baseUrl: "https://router.huggingface.co/v1",
-		compat: {"supportsDeveloperRole":false},
+		compat: { supportsDeveloperRole: false },
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -280,7 +280,7 @@ export const huggingface_MODELS = {
 		api: "openai-completions",
 		provider: "huggingface",
 		baseUrl: "https://router.huggingface.co/v1",
-		compat: {"supportsDeveloperRole":false},
+		compat: { supportsDeveloperRole: false },
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -298,7 +298,7 @@ export const huggingface_MODELS = {
 		api: "openai-completions",
 		provider: "huggingface",
 		baseUrl: "https://router.huggingface.co/v1",
-		compat: {"supportsDeveloperRole":false},
+		compat: { supportsDeveloperRole: false },
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -316,7 +316,7 @@ export const huggingface_MODELS = {
 		api: "openai-completions",
 		provider: "huggingface",
 		baseUrl: "https://router.huggingface.co/v1",
-		compat: {"supportsDeveloperRole":false},
+		compat: { supportsDeveloperRole: false },
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -334,7 +334,7 @@ export const huggingface_MODELS = {
 		api: "openai-completions",
 		provider: "huggingface",
 		baseUrl: "https://router.huggingface.co/v1",
-		compat: {"supportsDeveloperRole":false},
+		compat: { supportsDeveloperRole: false },
 		reasoning: true,
 		input: ["text"],
 		cost: {

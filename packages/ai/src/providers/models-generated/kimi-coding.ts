@@ -4,7 +4,7 @@
 import type { Model } from "../../types.js";
 
 export const kimi_coding_MODELS = {
-	"k2p5": {
+	k2p5: {
 		id: "k2p5",
 		name: "Kimi K2.5",
 		api: "anthropic-messages",

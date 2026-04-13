@@ -41,8 +41,8 @@ export class Executor {
 
 	constructor(
 		registry: ModelRegistry,
-		executorModel: import("@a7garden/ai").Model<import("@a7garden/ai").Api>,
-		plannerModel: import("@a7garden/ai").Model<import("@a7garden/ai").Api>,
+		executorModel: import("@oxipi/ai").Model<import("@oxipi/ai").Api>,
+		plannerModel: import("@oxipi/ai").Model<import("@oxipi/ai").Api>,
 		repoPath: string,
 		options?: ExecutorOptions,
 	) {

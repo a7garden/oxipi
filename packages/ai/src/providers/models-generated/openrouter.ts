@@ -429,7 +429,7 @@ export const openrouter_MODELS = {
 		contextWindow: 131072,
 		maxTokens: 64000,
 	} satisfies Model<"openai-completions">,
-	"auto": {
+	auto: {
 		id: "auto",
 		name: "Auto",
 		api: "openai-completions",

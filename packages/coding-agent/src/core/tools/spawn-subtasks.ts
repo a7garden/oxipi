@@ -3,7 +3,7 @@
  * and spawn them in parallel, returning merged results.
  */
 
-import type { AgentToolResult } from "@a7garden/agent-core";
+import type { AgentToolResult } from "@oxipi/agent-core";
 import { Type } from "@sinclair/typebox";
 import type { Executor, ExecutorMode } from "../executor/index.js";
 import type { ExtensionContext } from "../extensions/types.js";
